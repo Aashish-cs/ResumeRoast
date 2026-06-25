@@ -34,7 +34,7 @@ const PricingPage = () => {
       <div className="mx-auto max-w-2xl text-center">
         <h1 className="text-4xl font-black tracking-normal">Unlock the rewrite</h1>
         <p className="mt-3 text-zinc-600">
-          Free users get one honest analysis. Subscribers get unlimited roasts and
+          Free users get one honest analysis. Subscribers get monthly roasts and
           full resume rewrites.
         </p>
       </div>
@@ -53,7 +53,7 @@ const PricingPage = () => {
 
         <div className="mt-6 space-y-3">
           {[
-            "Unlimited resume analyses",
+            "30 resume analyses per month",
             "Full improved resume text",
             "Downloadable PDF and DOCX",
             "Re-run analyses after edits"

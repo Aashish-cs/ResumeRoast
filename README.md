@@ -8,7 +8,7 @@ Stripe subscription.
 
 - Frontend: React, Vite, Tailwind CSS
 - Backend: Node.js, Express, MongoDB, JWT auth
-- AI: Anthropic Claude using the `claude-sonnet-4-6` model string
+- AI: Google Gemini using the free-tier-friendly `gemini-2.5-flash-lite` model
 - Storage: AWS S3 for uploaded PDFs
 - Payments: Stripe subscriptions and webhooks
 - Email: SendGrid verification, password reset, and receipt emails
@@ -89,17 +89,24 @@ For local development, `.env.example` sets:
 USE_DEMO_AI=true
 ```
 
-That makes the backend return a realistic fake Claude response so you can test
+That makes the backend return a realistic fake AI response so you can test
 signup, upload, results, dashboard, and paywall UI before wiring every external
 service.
 
-To use Claude for real:
+To use Gemini for real:
 
 ```bash
 USE_DEMO_AI=false
-ANTHROPIC_API_KEY=your-key
-ANTHROPIC_MODEL=claude-sonnet-4-6
+GEMINI_API_KEY=your-key
+GEMINI_MODEL=gemini-2.5-flash-lite
+GEMINI_FALLBACK_MODELS=gemini-2.0-flash-lite,gemini-2.0-flash
+ALLOW_AI_FALLBACK=true
 ```
+
+The backend tries the primary Gemini model first, then fallback Gemini models if
+Google returns a temporary free-tier/high-demand error. If those are also busy,
+`ALLOW_AI_FALLBACK=true` lets the portfolio demo return a fake analysis instead
+of crashing.
 
 ## Stripe Setup
 
@@ -155,15 +162,16 @@ server skips S3 storage with a console message.
   `User.hasUsedFreeAnalysis`.
 - The free analysis slot is claimed atomically before the AI call to reduce
   duplicate/concurrent free usage.
-- Free users do not trigger rewrite generation. The backend asks Claude for
+- Free users do not trigger rewrite generation. The backend asks Gemini for
   `rewrite: null` and strips rewrites from responses unless the user is paid.
+- The Gemini API key stays server-side. It is never exposed in the React app.
 - Paid status is read from MongoDB after Stripe webhook sync, not from the
   frontend.
 - PDF uploads are capped by `RESUME_MAX_BYTES`, defaulting to 5 MB.
 - Extracted resume text is capped by `RESUME_MAX_CHARS`, defaulting to 12,000
-  characters, to control Claude token cost.
-- The Claude system prompt uses Anthropic prompt caching with
-  `cache_control: { type: "ephemeral" }`.
+  characters, to control AI token usage.
+- Pro users are capped by `PRO_MONTHLY_ANALYSIS_LIMIT`, defaulting to 30
+  analyses per month, so the portfolio deployment can stay cost-aware.
 - Express rate limiting is enabled for `/api` routes.
 - Helmet and CORS are configured on the API.
 - S3 uploads use server-side encryption.

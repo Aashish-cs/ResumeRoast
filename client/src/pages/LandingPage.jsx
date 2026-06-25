@@ -67,7 +67,7 @@ const LandingPage = () => (
           </h2>
           <p className="mt-4 max-w-2xl text-zinc-600">
             The free tier is intentionally useful: score, roast, and issues. The
-            paid tier adds unlimited analyses and downloadable rewrites.
+            paid tier adds 30 monthly analyses and downloadable rewrites.
           </p>
           <div className="mt-8 grid gap-3 sm:grid-cols-2">
             {[
@@ -90,7 +90,7 @@ const LandingPage = () => (
             <span className="pb-2 text-zinc-500">per month</span>
           </div>
           <p className="mt-4 text-sm leading-6 text-zinc-600">
-            Unlimited analyses, full rewritten resumes, and PDF/DOCX downloads.
+            30 analyses/month, full rewritten resumes, and PDF/DOCX downloads.
           </p>
           <Link to="/pricing" className="button-primary mt-5 w-full">
             Upgrade

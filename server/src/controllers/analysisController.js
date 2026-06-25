@@ -2,9 +2,10 @@ const { Document, Packer, Paragraph, TextRun } = require("docx");
 const PDFDocument = require("pdfkit");
 const Analysis = require("../models/Analysis");
 const User = require("../models/User");
+const config = require("../config/env");
 const AppError = require("../utils/AppError");
 const asyncHandler = require("../utils/asyncHandler");
-const { analyzeResumeWithClaude } = require("../services/anthropicService");
+const { analyzeResumeWithAi } = require("../services/aiService");
 const { extractTextFromPdf, hashResumeText } = require("../services/pdfService");
 const { uploadResumeToS3 } = require("../services/s3Service");
 
@@ -34,7 +35,7 @@ const claimFreeAnalysis = async (userId) => {
 
   if (!user) {
     throw new AppError(
-      "Your one free analysis is already used. Subscribe to unlock unlimited roasts and rewrites.",
+      "Your one free analysis is already used. Subscribe to unlock monthly roasts and rewrites.",
       403,
       "FREE_ANALYSIS_USED"
     );
@@ -45,6 +46,26 @@ const claimFreeAnalysis = async (userId) => {
 
 const releaseFreeAnalysis = async (userId) => {
   await User.updateOne({ _id: userId }, { $set: { hasUsedFreeAnalysis: false } });
+};
+
+const getCurrentMonthStart = () => {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), 1);
+};
+
+const enforcePaidAnalysisLimit = async (userId) => {
+  const usedThisMonth = await Analysis.countDocuments({
+    user: userId,
+    createdAt: { $gte: getCurrentMonthStart() }
+  });
+
+  if (usedThisMonth >= config.proMonthlyAnalysisLimit) {
+    throw new AppError(
+      `Pro accounts are limited to ${config.proMonthlyAnalysisLimit} analyses per month in this portfolio build.`,
+      403,
+      "PRO_ANALYSIS_LIMIT"
+    );
+  }
 };
 
 const analyzeResume = asyncHandler(async (req, res) => {
@@ -58,6 +79,8 @@ const analyzeResume = asyncHandler(async (req, res) => {
   if (!isPaid) {
     req.user = await claimFreeAnalysis(req.user._id);
     freeSlotClaimed = true;
+  } else {
+    await enforcePaidAnalysisLimit(req.user._id);
   }
 
   try {
@@ -67,7 +90,7 @@ const analyzeResume = asyncHandler(async (req, res) => {
       file: req.file
     });
 
-    const aiResult = await analyzeResumeWithClaude({
+    const aiResult = await analyzeResumeWithAi({
       resumeText,
       includeRewrite: isPaid
     });
@@ -83,7 +106,7 @@ const analyzeResume = asyncHandler(async (req, res) => {
       issues: aiResult.issues,
       rewrite: isPaid ? aiResult.rewrite : undefined,
       rewriteUnlocked: isPaid,
-      model: "claude-sonnet-4-6",
+      model: aiResult.model,
       tokenUsage: {
         inputTokens: aiResult.usage?.inputTokens || 0,
         outputTokens: aiResult.usage?.outputTokens || 0
