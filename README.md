@@ -60,6 +60,27 @@ side has its own package file.
    http://localhost:5173
    ```
 
+### Local MongoDB Option
+
+If you do not want to set up MongoDB Atlas yet, run MongoDB locally:
+
+```bash
+brew tap mongodb/brew
+brew trust mongodb/brew
+brew install mongodb-community@8.0
+brew services start mongodb/brew/mongodb-community@8.0
+```
+
+Then use this in `.env`:
+
+```bash
+MONGODB_URI=mongodb://127.0.0.1:27017/resumeroast
+USE_DEMO_AI=true
+```
+
+That is enough to test signup, email verification dev links, login, PDF upload,
+demo analysis, and the free-tier paywall flow locally.
+
 ## Running Without Paid API Keys
 
 For local development, `.env.example` sets:

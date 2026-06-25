@@ -22,7 +22,7 @@
     "mongoose": "^8.9.2",
     "morgan": "^1.10.0",
     "multer": "^2.0.2",
-    "pdf-parse": "^1.1.1",
+    "pdf-parse": "^2.4.5",
     "pdfkit": "^0.15.2",
     "stripe": "^17.5.0"
   },

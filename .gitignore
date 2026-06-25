@@ -7,4 +7,5 @@ build/
 npm-debug.log*
 coverage/
 uploads/
+work/
 *.log
