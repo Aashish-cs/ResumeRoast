@@ -16,14 +16,14 @@ const LandingPage = () => (
         <div className="max-w-2xl">
           <div className="inline-flex items-center gap-2 rounded-md border border-white/20 bg-white/10 px-3 py-1.5 text-sm font-semibold text-orange-100 backdrop-blur">
             <Flame className="h-4 w-4" />
-            Free roast. Paid rewrite.
+            2 free roasts. Paid daily limit.
           </div>
           <h1 className="mt-6 text-5xl font-black leading-tight tracking-normal sm:text-6xl">
             ResumeRoast
           </h1>
           <p className="mt-5 max-w-xl text-lg leading-8 text-zinc-100">
-            Upload a PDF resume, get an ATS score, a blunt roast, and a clear list
-            of fixes. Subscribers unlock the full rewritten resume.
+            Upload a PDF resume, get an ATS score, a blunt roast, a clear list
+            of fixes, and a rewritten resume.
           </p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <Link to="/upload" className="button-primary bg-orange-600 hover:bg-orange-500">
@@ -46,7 +46,7 @@ const LandingPage = () => (
         {[
           ["ATS score", "A 0-100 score with a recruiter-friendly letter grade.", Gauge],
           ["Free roast", "Specific weaknesses shown before any payment step.", Flame],
-          ["Locked rewrite", "The improved resume stays server-side until subscribed.", Lock]
+          ["Free rewrites", "The first 2 analyses include full rewritten resume text.", Lock]
         ].map(([title, copy, Icon]) => (
           <div key={title} className="flex gap-3 rounded-lg border border-zinc-200 p-4">
             <Icon className="mt-0.5 h-5 w-5 shrink-0 text-orange-600" />
@@ -66,12 +66,12 @@ const LandingPage = () => (
             Built for a quick honest read.
           </h2>
           <p className="mt-4 max-w-2xl text-zinc-600">
-            The free tier is intentionally useful: score, roast, and issues. The
-            paid tier adds 30 monthly analyses and downloadable rewrites.
+            The free tier is intentionally useful: score, roast, issues, and
+            rewrites. The paid tier adds 10 analyses per day.
           </p>
           <div className="mt-8 grid gap-3 sm:grid-cols-2">
             {[
-              "One free analysis per verified email",
+              "2 free analyses per verified email",
               "Server-side subscription checks",
               "PDF text extraction before AI calls",
               "Stripe webhook status sync"
@@ -90,7 +90,7 @@ const LandingPage = () => (
             <span className="pb-2 text-zinc-500">per month</span>
           </div>
           <p className="mt-4 text-sm leading-6 text-zinc-600">
-            30 analyses/month, full rewritten resumes, and PDF/DOCX downloads.
+            10 analyses/day, full rewritten resumes, and PDF/DOCX downloads.
           </p>
           <Link to="/pricing" className="button-primary mt-5 w-full">
             Upgrade

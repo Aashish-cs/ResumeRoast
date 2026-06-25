@@ -30,6 +30,11 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: false
     },
+    freeAnalysesUsed: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
     stripeCustomerId: String,
     subscriptionStatus: {
       type: String,
@@ -61,6 +66,7 @@ userSchema.methods.toSafeJSON = function toSafeJSON() {
     email: this.email,
     emailVerified: this.emailVerified,
     hasUsedFreeAnalysis: this.hasUsedFreeAnalysis,
+    freeAnalysesUsed: this.freeAnalysesUsed || 0,
     subscriptionStatus: this.subscriptionStatus,
     subscriptionCurrentPeriodEnd: this.subscriptionCurrentPeriodEnd
   };

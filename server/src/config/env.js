@@ -21,7 +21,8 @@ const config = {
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || "7d",
   resumeMaxBytes: numberFromEnv("RESUME_MAX_BYTES", 5 * 1024 * 1024),
   resumeMaxChars: numberFromEnv("RESUME_MAX_CHARS", 12000),
-  proMonthlyAnalysisLimit: numberFromEnv("PRO_MONTHLY_ANALYSIS_LIMIT", 30),
+  freeAnalysisLimit: numberFromEnv("FREE_ANALYSIS_LIMIT", 2),
+  proDailyAnalysisLimit: numberFromEnv("PRO_DAILY_ANALYSIS_LIMIT", 10),
   useDemoAi: process.env.USE_DEMO_AI === "true",
   allowAiFallback: process.env.ALLOW_AI_FALLBACK !== "false",
   gemini: {

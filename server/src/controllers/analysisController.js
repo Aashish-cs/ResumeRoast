@@ -28,14 +28,23 @@ const serializeAnalysis = (analysis, canViewRewrite) => {
 
 const claimFreeAnalysis = async (userId) => {
   const user = await User.findOneAndUpdate(
-    { _id: userId, hasUsedFreeAnalysis: false },
-    { $set: { hasUsedFreeAnalysis: true } },
+    {
+      _id: userId,
+      $or: [
+        { freeAnalysesUsed: { $exists: false } },
+        { freeAnalysesUsed: { $lt: config.freeAnalysisLimit } }
+      ]
+    },
+    {
+      $inc: { freeAnalysesUsed: 1 },
+      $set: { hasUsedFreeAnalysis: true }
+    },
     { new: true }
   );
 
   if (!user) {
     throw new AppError(
-      "Your one free analysis is already used. Subscribe to unlock monthly roasts and rewrites.",
+      `Your ${config.freeAnalysisLimit} free analyses are already used. Subscribe to unlock daily roasts and rewrites.`,
       403,
       "FREE_ANALYSIS_USED"
     );
@@ -45,23 +54,28 @@ const claimFreeAnalysis = async (userId) => {
 };
 
 const releaseFreeAnalysis = async (userId) => {
-  await User.updateOne({ _id: userId }, { $set: { hasUsedFreeAnalysis: false } });
+  const user = await User.findById(userId);
+  if (!user) return;
+
+  user.freeAnalysesUsed = Math.max(0, (user.freeAnalysesUsed || 0) - 1);
+  user.hasUsedFreeAnalysis = user.freeAnalysesUsed > 0;
+  await user.save();
 };
 
-const getCurrentMonthStart = () => {
+const getCurrentDayStart = () => {
   const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), 1);
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
 };
 
 const enforcePaidAnalysisLimit = async (userId) => {
-  const usedThisMonth = await Analysis.countDocuments({
+  const usedToday = await Analysis.countDocuments({
     user: userId,
-    createdAt: { $gte: getCurrentMonthStart() }
+    createdAt: { $gte: getCurrentDayStart() }
   });
 
-  if (usedThisMonth >= config.proMonthlyAnalysisLimit) {
+  if (usedToday >= config.proDailyAnalysisLimit) {
     throw new AppError(
-      `Pro accounts are limited to ${config.proMonthlyAnalysisLimit} analyses per month in this portfolio build.`,
+      `Pro accounts are limited to ${config.proDailyAnalysisLimit} analyses per day in this portfolio build.`,
       403,
       "PRO_ANALYSIS_LIMIT"
     );
@@ -74,6 +88,7 @@ const analyzeResume = asyncHandler(async (req, res) => {
   }
 
   const isPaid = req.user.isPaidSubscriber();
+  const includeRewrite = true;
   let freeSlotClaimed = false;
 
   if (!isPaid) {
@@ -92,7 +107,7 @@ const analyzeResume = asyncHandler(async (req, res) => {
 
     const aiResult = await analyzeResumeWithAi({
       resumeText,
-      includeRewrite: isPaid
+      includeRewrite
     });
 
     const analysis = await Analysis.create({
@@ -104,8 +119,8 @@ const analyzeResume = asyncHandler(async (req, res) => {
       grade: aiResult.grade,
       roast: aiResult.roast,
       issues: aiResult.issues,
-      rewrite: isPaid ? aiResult.rewrite : undefined,
-      rewriteUnlocked: isPaid,
+      rewrite: includeRewrite ? aiResult.rewrite : undefined,
+      rewriteUnlocked: includeRewrite,
       model: aiResult.model,
       tokenUsage: {
         inputTokens: aiResult.usage?.inputTokens || 0,
@@ -114,7 +129,7 @@ const analyzeResume = asyncHandler(async (req, res) => {
     });
 
     res.status(201).json({
-      analysis: serializeAnalysis(analysis, isPaid),
+      analysis: serializeAnalysis(analysis, includeRewrite),
       user: req.user.toSafeJSON()
     });
   } catch (error) {
@@ -130,10 +145,9 @@ const listAnalyses = asyncHandler(async (req, res) => {
   const analyses = await Analysis.find({ user: req.user._id })
     .sort({ createdAt: -1 })
     .limit(25);
-  const canViewRewrite = req.user.isPaidSubscriber();
 
   res.json({
-    analyses: analyses.map((analysis) => serializeAnalysis(analysis, canViewRewrite))
+    analyses: analyses.map((analysis) => serializeAnalysis(analysis, true))
   });
 });
 
@@ -148,15 +162,11 @@ const getAnalysis = asyncHandler(async (req, res) => {
   }
 
   res.json({
-    analysis: serializeAnalysis(analysis, req.user.isPaidSubscriber())
+    analysis: serializeAnalysis(analysis, true)
   });
 });
 
 const requireDownloadableRewrite = async (req) => {
-  if (!req.user.isPaidSubscriber()) {
-    throw new AppError("An active subscription is required to download rewrites.", 403, "PAYWALL");
-  }
-
   const analysis = await Analysis.findOne({
     _id: req.params.id,
     user: req.user._id

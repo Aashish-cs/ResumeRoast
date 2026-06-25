@@ -45,7 +45,7 @@ const SignupPage = () => {
           </span>
           <div>
             <h1 className="text-2xl font-black">Create account</h1>
-            <p className="text-sm text-zinc-500">One free roast per verified email.</p>
+            <p className="text-sm text-zinc-500">Two free roasts per verified email.</p>
           </div>
         </div>
 

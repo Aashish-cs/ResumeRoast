@@ -10,6 +10,7 @@ const DashboardPage = () => {
   const [loading, setLoading] = useState(true);
   const [portalLoading, setPortalLoading] = useState(false);
   const [error, setError] = useState("");
+  const freeUsed = user.freeAnalysesUsed || 0;
 
   useEffect(() => {
     const loadDashboard = async () => {
@@ -73,7 +74,7 @@ const DashboardPage = () => {
             <div className="flex items-center justify-between gap-4">
               <span className="text-zinc-500">Free analysis</span>
               <span className="font-semibold">
-                {user.hasUsedFreeAnalysis ? "Used" : "Available"}
+                {Math.min(freeUsed, 2)} of 2 used
               </span>
             </div>
             <div className="flex items-center justify-between gap-4">

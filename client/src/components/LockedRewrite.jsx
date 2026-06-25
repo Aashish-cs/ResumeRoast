@@ -23,7 +23,7 @@ const LockedRewrite = () => (
           <Sparkles className="mx-auto h-7 w-7 text-orange-600" />
           <h3 className="mt-3 text-lg font-black">Unlock the rewrite</h3>
           <p className="mt-2 text-sm leading-6 text-zinc-600">
-            Subscribers get 30 analyses per month and downloadable PDF/DOCX rewrites.
+            Subscribers get 10 analyses per day and downloadable PDF/DOCX rewrites.
           </p>
           <Link to="/pricing" className="button-primary mt-4 w-full">
             Subscribe to unlock

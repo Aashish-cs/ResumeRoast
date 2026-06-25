@@ -1,8 +1,8 @@
 # ResumeRoast
 
 ResumeRoast is a full-stack MERN-style SaaS app where users upload a PDF resume,
-get an ATS score, receive a blunt roast, and unlock a rewritten resume through a
-Stripe subscription.
+get an ATS score, receive a blunt roast, and get a rewritten resume. Free users
+get two analyses, while subscribed users get a higher daily limit.
 
 ## Stack
 
@@ -158,20 +158,18 @@ server skips S3 storage with a console message.
 
 ## Security and Cost-Control Decisions
 
-- Free users get exactly one analysis ever, enforced server-side with
-  `User.hasUsedFreeAnalysis`.
-- The free analysis slot is claimed atomically before the AI call to reduce
+- Free analyses are claimed atomically before the AI call to reduce
   duplicate/concurrent free usage.
-- Free users do not trigger rewrite generation. The backend asks Gemini for
-  `rewrite: null` and strips rewrites from responses unless the user is paid.
+- Free users get two analyses with rewrites, enforced server-side with
+  `User.freeAnalysesUsed`.
+- Pro users are capped by `PRO_DAILY_ANALYSIS_LIMIT`, defaulting to 10 analyses
+  per day, so the portfolio deployment can stay cost-aware.
 - The Gemini API key stays server-side. It is never exposed in the React app.
 - Paid status is read from MongoDB after Stripe webhook sync, not from the
   frontend.
 - PDF uploads are capped by `RESUME_MAX_BYTES`, defaulting to 5 MB.
 - Extracted resume text is capped by `RESUME_MAX_CHARS`, defaulting to 12,000
   characters, to control AI token usage.
-- Pro users are capped by `PRO_MONTHLY_ANALYSIS_LIMIT`, defaulting to 30
-  analyses per month, so the portfolio deployment can stay cost-aware.
 - Express rate limiting is enabled for `/api` routes.
 - Helmet and CORS are configured on the API.
 - S3 uploads use server-side encryption.
