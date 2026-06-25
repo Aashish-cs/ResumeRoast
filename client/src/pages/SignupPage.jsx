@@ -1,15 +1,27 @@
 import { Flame, Loader2 } from "lucide-react";
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
+const securityQuestions = [
+  "What city were you born in?",
+  "What was the name of your first school?",
+  "What is your favorite teacher's name?",
+  "What was your childhood nickname?"
+];
+
 const SignupPage = () => {
-  const [form, setForm] = useState({ name: "", email: "", password: "" });
+  const [form, setForm] = useState({
+    name: "",
+    email: "",
+    password: "",
+    securityQuestion: securityQuestions[0],
+    securityAnswer: ""
+  });
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState("");
-  const [devLink, setDevLink] = useState("");
   const [error, setError] = useState("");
   const { signup } = useAuth();
+  const navigate = useNavigate();
 
   const updateField = (event) => {
     setForm((current) => ({
@@ -22,13 +34,10 @@ const SignupPage = () => {
     event.preventDefault();
     setLoading(true);
     setError("");
-    setMessage("");
-    setDevLink("");
 
     try {
-      const data = await signup(form);
-      setMessage(data.message);
-      setDevLink(data.devVerificationUrl || "");
+      await signup(form);
+      navigate("/upload");
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -45,7 +54,7 @@ const SignupPage = () => {
           </span>
           <div>
             <h1 className="text-2xl font-black">Create account</h1>
-            <p className="text-sm text-zinc-500">Two free roasts per verified email.</p>
+            <p className="text-sm text-zinc-500">Two free roasts per account.</p>
           </div>
         </div>
 
@@ -94,17 +103,38 @@ const SignupPage = () => {
               required
             />
           </div>
-
-          {message && (
-            <div className="rounded-lg border border-teal-200 bg-teal-50 p-3 text-sm font-semibold text-teal-800">
-              {message}
-              {devLink && (
-                <a className="mt-2 block underline" href={devLink}>
-                  Open local verification link
-                </a>
-              )}
-            </div>
-          )}
+          <div>
+            <label className="text-sm font-semibold" htmlFor="securityQuestion">
+              Security question
+            </label>
+            <select
+              className="input mt-1"
+              id="securityQuestion"
+              name="securityQuestion"
+              value={form.securityQuestion}
+              onChange={updateField}
+              required
+            >
+              {securityQuestions.map((question) => (
+                <option key={question} value={question}>
+                  {question}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-sm font-semibold" htmlFor="securityAnswer">
+              Security answer
+            </label>
+            <input
+              className="input mt-1"
+              id="securityAnswer"
+              name="securityAnswer"
+              value={form.securityAnswer}
+              onChange={updateField}
+              required
+            />
+          </div>
 
           {error && (
             <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">

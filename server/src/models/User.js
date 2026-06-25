@@ -20,12 +20,21 @@ const userSchema = new mongoose.Schema(
     },
     emailVerified: {
       type: Boolean,
-      default: false
+      default: true
     },
     emailVerificationTokenHash: String,
     emailVerificationExpires: Date,
     passwordResetTokenHash: String,
     passwordResetExpires: Date,
+    securityQuestion: {
+      type: String,
+      trim: true,
+      required: true
+    },
+    securityAnswerHash: {
+      type: String,
+      required: true
+    },
     hasUsedFreeAnalysis: {
       type: Boolean,
       default: false

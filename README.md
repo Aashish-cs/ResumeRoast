@@ -11,7 +11,7 @@ get two analyses, while subscribed users get a higher daily limit.
 - AI: Google Gemini using the free-tier-friendly `gemini-2.5-flash-lite` model
 - Storage: AWS S3 for uploaded PDFs
 - Payments: Stripe subscriptions and webhooks
-- Email: SendGrid verification, password reset, and receipt emails
+- Email: optional SendGrid receipt emails
 
 ## Project Structure
 
@@ -78,8 +78,8 @@ MONGODB_URI=mongodb://127.0.0.1:27017/resumeroast
 USE_DEMO_AI=true
 ```
 
-That is enough to test signup, email verification dev links, login, PDF upload,
-demo analysis, and the free-tier paywall flow locally.
+That is enough to test signup, login, security-question password reset, PDF
+upload, demo analysis, and the free-tier flow locally.
 
 ## Running Without Paid API Keys
 
@@ -131,11 +131,10 @@ STRIPE_WEBHOOK_SECRET=whsec_...
 The app checks `subscriptionStatus` from MongoDB, which is synced by Stripe
 webhooks. It does not trust frontend state for paid access.
 
-## Email Verification
+## Receipt Email
 
-If `SENDGRID_API_KEY` is missing, the server logs verification/reset links to
-the terminal and also returns local-only dev links to the frontend. In
-production, configure:
+SendGrid is only used for optional Stripe receipt emails. In production,
+configure:
 
 ```bash
 SENDGRID_API_KEY=your-key
@@ -174,14 +173,14 @@ server skips S3 storage with a console message.
 - Helmet and CORS are configured on the API.
 - S3 uploads use server-side encryption.
 - Passwords are hashed with bcrypt before storage.
-- Verification and reset tokens are stored as SHA-256 hashes, not raw tokens.
+- Security-question answers are normalized, hashed with bcrypt, and never stored
+  as raw text.
 
 ## Main API Routes
 
 ```text
 POST /api/auth/signup
 POST /api/auth/login
-POST /api/auth/verify-email
 POST /api/auth/forgot-password
 POST /api/auth/reset-password
 

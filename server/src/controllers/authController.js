@@ -2,32 +2,29 @@ const bcrypt = require("bcryptjs");
 const User = require("../models/User");
 const AppError = require("../utils/AppError");
 const asyncHandler = require("../utils/asyncHandler");
-const { createPlainToken, hashToken } = require("../utils/securityTokens");
-const {
-  sendVerificationEmail,
-  sendPasswordResetEmail
-} = require("../services/emailService");
 const { signAuthToken } = require("../middleware/auth");
 
-const createVerificationFields = () => {
-  const token = createPlainToken();
-
-  return {
-    token,
-    tokenHash: hashToken(token),
-    expires: new Date(Date.now() + 24 * 60 * 60 * 1000)
-  };
+const normalizeSecurityAnswer = (answer) => {
+  return String(answer || "").trim().toLowerCase();
 };
 
 const signup = asyncHandler(async (req, res) => {
-  const { name, email, password } = req.body;
+  const { name, email, password, securityQuestion, securityAnswer } = req.body;
 
-  if (!name || !email || !password) {
-    throw new AppError("Name, email, and password are required.", 400, "MISSING_FIELDS");
+  if (!name || !email || !password || !securityQuestion || !securityAnswer) {
+    throw new AppError(
+      "Name, email, password, security question, and security answer are required.",
+      400,
+      "MISSING_FIELDS"
+    );
   }
 
   if (password.length < 8) {
     throw new AppError("Password must be at least 8 characters.", 400, "WEAK_PASSWORD");
+  }
+
+  if (normalizeSecurityAnswer(securityAnswer).length < 2) {
+    throw new AppError("Security answer must be at least 2 characters.", 400, "WEAK_ANSWER");
   }
 
   const existingUser = await User.findOne({ email: email.toLowerCase().trim() });
@@ -35,21 +32,21 @@ const signup = asyncHandler(async (req, res) => {
     throw new AppError("That email is already registered.", 409, "DUPLICATE_EMAIL");
   }
 
-  const verification = createVerificationFields();
   const passwordHash = await bcrypt.hash(password, 12);
+  const securityAnswerHash = await bcrypt.hash(normalizeSecurityAnswer(securityAnswer), 12);
   const user = await User.create({
     name,
     email,
     passwordHash,
-    emailVerificationTokenHash: verification.tokenHash,
-    emailVerificationExpires: verification.expires
+    emailVerified: true,
+    securityQuestion,
+    securityAnswerHash
   });
 
-  const emailMeta = await sendVerificationEmail({ user, token: verification.token });
-
   res.status(201).json({
-    message: "Account created. Please verify your email before analyzing a resume.",
-    devVerificationUrl: emailMeta.verificationUrl
+    message: "Account created. You can log in now.",
+    token: signAuthToken(user),
+    user: user.toSafeJSON()
   });
 });
 
@@ -67,10 +64,6 @@ const login = asyncHandler(async (req, res) => {
     throw new AppError("Invalid email or password.", 401, "INVALID_CREDENTIALS");
   }
 
-  if (!user.emailVerified) {
-    throw new AppError("Please verify your email before logging in.", 403, "EMAIL_NOT_VERIFIED");
-  }
-
   res.json({
     token: signAuthToken(user),
     user: user.toSafeJSON()
@@ -79,60 +72,6 @@ const login = asyncHandler(async (req, res) => {
 
 const me = asyncHandler(async (req, res) => {
   res.json({ user: req.user.toSafeJSON() });
-});
-
-const verifyEmail = asyncHandler(async (req, res) => {
-  const token = req.body.token || req.query.token;
-
-  if (!token) {
-    throw new AppError("Verification token is required.", 400, "TOKEN_REQUIRED");
-  }
-
-  const user = await User.findOne({
-    emailVerificationTokenHash: hashToken(token),
-    emailVerificationExpires: { $gt: new Date() }
-  });
-
-  if (!user) {
-    throw new AppError("Verification link is invalid or expired.", 400, "INVALID_TOKEN");
-  }
-
-  user.emailVerified = true;
-  user.emailVerificationTokenHash = undefined;
-  user.emailVerificationExpires = undefined;
-  await user.save();
-
-  res.json({
-    message: "Email verified. You can log in now."
-  });
-});
-
-const resendVerification = asyncHandler(async (req, res) => {
-  const { email } = req.body;
-
-  if (!email) {
-    throw new AppError("Email is required.", 400, "EMAIL_REQUIRED");
-  }
-
-  const user = await User.findOne({ email: email.toLowerCase().trim() });
-
-  if (!user || user.emailVerified) {
-    return res.json({
-      message: "If that account needs verification, a new email has been sent."
-    });
-  }
-
-  const verification = createVerificationFields();
-  user.emailVerificationTokenHash = verification.tokenHash;
-  user.emailVerificationExpires = verification.expires;
-  await user.save();
-
-  const emailMeta = await sendVerificationEmail({ user, token: verification.token });
-
-  res.json({
-    message: "If that account needs verification, a new email has been sent.",
-    devVerificationUrl: emailMeta.verificationUrl
-  });
 });
 
 const forgotPassword = asyncHandler(async (req, res) => {
@@ -144,48 +83,50 @@ const forgotPassword = asyncHandler(async (req, res) => {
 
   const user = await User.findOne({ email: email.toLowerCase().trim() });
 
-  if (!user) {
+  if (!user || !user.securityQuestion) {
     return res.json({
-      message: "If that email exists, a reset link has been sent."
+      message: "If that account exists, its security question will appear."
     });
   }
 
-  const token = createPlainToken();
-  user.passwordResetTokenHash = hashToken(token);
-  user.passwordResetExpires = new Date(Date.now() + 60 * 60 * 1000);
-  await user.save();
-
-  const emailMeta = await sendPasswordResetEmail({ user, token });
-
   res.json({
-    message: "If that email exists, a reset link has been sent.",
-    devResetUrl: emailMeta.resetUrl
+    message: "Answer your security question to reset your password.",
+    email: user.email,
+    securityQuestion: user.securityQuestion
   });
 });
 
 const resetPassword = asyncHandler(async (req, res) => {
-  const { token, password } = req.body;
+  const { email, securityAnswer, password } = req.body;
 
-  if (!token || !password) {
-    throw new AppError("Token and new password are required.", 400, "MISSING_FIELDS");
+  if (!email || !securityAnswer || !password) {
+    throw new AppError(
+      "Email, security answer, and new password are required.",
+      400,
+      "MISSING_FIELDS"
+    );
   }
 
   if (password.length < 8) {
     throw new AppError("Password must be at least 8 characters.", 400, "WEAK_PASSWORD");
   }
 
-  const user = await User.findOne({
-    passwordResetTokenHash: hashToken(token),
-    passwordResetExpires: { $gt: new Date() }
-  });
+  const user = await User.findOne({ email: email.toLowerCase().trim() });
 
-  if (!user) {
-    throw new AppError("Reset link is invalid or expired.", 400, "INVALID_TOKEN");
+  if (!user || !user.securityAnswerHash) {
+    throw new AppError("Security answer is incorrect.", 400, "INVALID_SECURITY_ANSWER");
+  }
+
+  const answerMatches = await bcrypt.compare(
+    normalizeSecurityAnswer(securityAnswer),
+    user.securityAnswerHash
+  );
+
+  if (!answerMatches) {
+    throw new AppError("Security answer is incorrect.", 400, "INVALID_SECURITY_ANSWER");
   }
 
   user.passwordHash = await bcrypt.hash(password, 12);
-  user.passwordResetTokenHash = undefined;
-  user.passwordResetExpires = undefined;
   await user.save();
 
   res.json({
@@ -197,8 +138,6 @@ module.exports = {
   signup,
   login,
   me,
-  verifyEmail,
-  resendVerification,
   forgotPassword,
   resetPassword
 };

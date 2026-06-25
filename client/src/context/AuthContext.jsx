@@ -52,12 +52,21 @@ export const AuthProvider = ({ children }) => {
     return data.user;
   };
 
-  const signup = (payload) =>
-    apiRequest("/auth/signup", {
+  const signup = async (payload) => {
+    const data = await apiRequest("/auth/signup", {
       method: "POST",
       body: payload,
       token: null
     });
+
+    if (data.token) {
+      storeToken(data.token);
+      setToken(data.token);
+      setUser(data.user);
+    }
+
+    return data;
+  };
 
   const logout = () => {
     clearStoredToken();

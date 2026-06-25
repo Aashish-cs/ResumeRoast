@@ -6,12 +6,12 @@ const {
   downloadRewritePdf,
   downloadRewriteDocx
 } = require("../controllers/analysisController");
-const { requireAuth, requireVerifiedEmail } = require("../middleware/auth");
+const { requireAuth } = require("../middleware/auth");
 const upload = require("../middleware/upload");
 
 const router = express.Router();
 
-router.use(requireAuth, requireVerifiedEmail);
+router.use(requireAuth);
 router.get("/", listAnalyses);
 router.post("/", upload.single("resume"), analyzeResume);
 router.get("/:id", getAnalysis);

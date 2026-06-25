@@ -10,7 +10,6 @@ import ResetPasswordPage from "./pages/ResetPasswordPage";
 import ResultsPage from "./pages/ResultsPage";
 import SignupPage from "./pages/SignupPage";
 import UploadPage from "./pages/UploadPage";
-import VerifyEmailPage from "./pages/VerifyEmailPage";
 
 const App = () => (
   <Layout>
@@ -19,7 +18,6 @@ const App = () => (
       <Route path="/pricing" element={<PricingPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup" element={<SignupPage />} />
-      <Route path="/verify-email" element={<VerifyEmailPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route

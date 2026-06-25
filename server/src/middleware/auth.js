@@ -33,22 +33,7 @@ const requireAuth = asyncHandler(async (req, res, next) => {
   next();
 });
 
-const requireVerifiedEmail = (req, res, next) => {
-  if (!req.user.emailVerified) {
-    return next(
-      new AppError(
-        "Please verify your email before analyzing resumes.",
-        403,
-        "EMAIL_NOT_VERIFIED"
-      )
-    );
-  }
-
-  next();
-};
-
 module.exports = {
   requireAuth,
-  requireVerifiedEmail,
   signAuthToken
 };
