@@ -65,7 +65,13 @@ const userSchema = new mongoose.Schema(
       ],
       default: "inactive"
     },
-    subscriptionCurrentPeriodEnd: Date
+    subscriptionCurrentPeriodEnd: Date,
+    subscriptionCancelAtPeriodEnd: {
+      type: Boolean,
+      default: false
+    },
+    subscriptionCancelAt: Date,
+    subscriptionCanceledAt: Date
   },
   { timestamps: true }
 );
@@ -84,7 +90,10 @@ userSchema.methods.toSafeJSON = function toSafeJSON() {
     freeAnalysesUsed: this.freeAnalysesUsed || 0,
     hasStripeCustomer: Boolean(this.stripeCustomerId),
     subscriptionStatus: this.subscriptionStatus,
-    subscriptionCurrentPeriodEnd: this.subscriptionCurrentPeriodEnd
+    subscriptionCurrentPeriodEnd: this.subscriptionCurrentPeriodEnd,
+    subscriptionCancelAtPeriodEnd: this.subscriptionCancelAtPeriodEnd,
+    subscriptionCancelAt: this.subscriptionCancelAt,
+    subscriptionCanceledAt: this.subscriptionCanceledAt
   };
 };
 

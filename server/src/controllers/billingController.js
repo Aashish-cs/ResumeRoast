@@ -54,6 +54,9 @@ const getSubscriptionPeriodEnd = (subscription) => {
   );
 };
 
+const dateFromStripeTimestamp = (timestamp) =>
+  timestamp ? new Date(timestamp * 1000) : null;
+
 const subscriptionIncludesConfiguredPrice = (subscription) => {
   if (!config.stripe.priceId) return true;
 
@@ -144,7 +147,12 @@ const syncSubscription = async (subscription) => {
   user.stripeCustomerId = customerId;
   user.stripeSubscriptionId = subscriptionId || user.stripeSubscriptionId;
   user.subscriptionStatus = subscriptionStatus;
-  user.subscriptionCurrentPeriodEnd = periodEnd ? new Date(periodEnd * 1000) : null;
+  user.subscriptionCurrentPeriodEnd = dateFromStripeTimestamp(periodEnd);
+  user.subscriptionCancelAtPeriodEnd = Boolean(subscription.cancel_at_period_end);
+  user.subscriptionCancelAt = dateFromStripeTimestamp(
+    subscription.cancel_at || (subscription.cancel_at_period_end ? periodEnd : null)
+  );
+  user.subscriptionCanceledAt = dateFromStripeTimestamp(subscription.canceled_at);
 
   await user.save();
   return user;

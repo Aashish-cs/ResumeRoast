@@ -4,6 +4,39 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { apiRequest } from "../lib/api";
 
+const formatDate = (value) => {
+  if (!value) return "";
+
+  return new Date(value).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric"
+  });
+};
+
+const getSubscriptionDisplay = (user) => {
+  const status = user.subscriptionStatus || "inactive";
+
+  if (
+    user.subscriptionCancelAtPeriodEnd &&
+    ["active", "trialing"].includes(status)
+  ) {
+    return {
+      label: "Canceling",
+      detail: `Access ends ${formatDate(
+        user.subscriptionCancelAt || user.subscriptionCurrentPeriodEnd
+      )}`,
+      className: "bg-amber-100 text-amber-900"
+    };
+  }
+
+  return {
+    label: status.replace("_", " "),
+    detail: "",
+    className: "bg-zinc-100 text-zinc-900"
+  };
+};
+
 const DashboardPage = () => {
   const { user, refreshUser } = useAuth();
   const [analyses, setAnalyses] = useState([]);
@@ -13,6 +46,7 @@ const DashboardPage = () => {
   const [searchParams] = useSearchParams();
   const freeUsed = user.freeAnalysesUsed || 0;
   const checkoutStatus = searchParams.get("checkout");
+  const subscriptionDisplay = getSubscriptionDisplay(user);
   const canManageBilling =
     user.hasStripeCustomer ||
     ["active", "trialing", "past_due", "unpaid", "incomplete"].includes(
@@ -92,8 +126,17 @@ const DashboardPage = () => {
             </div>
             <div className="flex items-center justify-between gap-4">
               <span className="text-zinc-500">Subscription</span>
-              <span className="rounded-md bg-zinc-100 px-2 py-1 font-semibold capitalize">
-                {user.subscriptionStatus.replace("_", " ")}
+              <span className="text-right">
+                <span
+                  className={`inline-flex rounded-md px-2 py-1 font-semibold capitalize ${subscriptionDisplay.className}`}
+                >
+                  {subscriptionDisplay.label}
+                </span>
+                {subscriptionDisplay.detail && (
+                  <span className="mt-1 block text-xs font-semibold text-zinc-500">
+                    {subscriptionDisplay.detail}
+                  </span>
+                )}
               </span>
             </div>
           </div>
