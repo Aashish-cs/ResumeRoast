@@ -56,10 +56,10 @@ const config = {
     priceId: process.env.STRIPE_PRICE_ID || "",
     successUrl:
       process.env.STRIPE_SUCCESS_URL ||
-      "http://localhost:5173/dashboard?checkout=success",
+      `${clientUrls[0]}/dashboard?checkout=success`,
     cancelUrl:
       process.env.STRIPE_CANCEL_URL ||
-      "http://localhost:5173/pricing?checkout=cancelled"
+      `${clientUrls[0]}/pricing?checkout=cancelled`
   },
   sendgrid: {
     apiKey: process.env.SENDGRID_API_KEY || "",

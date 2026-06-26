@@ -5,6 +5,10 @@ const asyncHandler = require("../utils/asyncHandler");
 const { sendReceiptEmail } = require("../services/emailService");
 const { getStripe, requireStripePrice } = require("../services/stripeService");
 
+const getStripeId = (value) => (typeof value === "string" ? value : value?.id);
+
+const getPortalReturnUrl = () => `${config.clientUrl}/dashboard`;
+
 const getOrCreateCustomer = async (user) => {
   const stripe = getStripe();
 
@@ -26,8 +30,66 @@ const getOrCreateCustomer = async (user) => {
   return customer.id;
 };
 
+const createPortalSession = async (stripeCustomerId) => {
+  const stripe = getStripe();
+  return stripe.billingPortal.sessions.create({
+    customer: stripeCustomerId,
+    return_url: getPortalReturnUrl()
+  });
+};
+
+const getSubscriptionPeriodEnd = (subscription) => {
+  const configuredItem = subscription.items?.data?.find(
+    (item) => item.price?.id === config.stripe.priceId
+  );
+  const firstItem = subscription.items?.data?.[0];
+
+  return (
+    subscription.current_period_end ||
+    configuredItem?.current_period_end ||
+    firstItem?.current_period_end ||
+    subscription.ended_at ||
+    subscription.cancel_at ||
+    null
+  );
+};
+
+const subscriptionIncludesConfiguredPrice = (subscription) => {
+  if (!config.stripe.priceId) return true;
+
+  return Boolean(
+    subscription.items?.data?.some((item) => item.price?.id === config.stripe.priceId)
+  );
+};
+
+const findUserForSubscription = async (subscription) => {
+  const customerId = getStripeId(subscription.customer);
+  const metadataUserId = subscription.metadata?.userId;
+
+  if (customerId) {
+    const user = await User.findOne({ stripeCustomerId: customerId });
+    if (user) return user;
+  }
+
+  if (metadataUserId) {
+    return User.findById(metadataUserId);
+  }
+
+  return null;
+};
+
 const createCheckoutSession = asyncHandler(async (req, res) => {
   requireStripePrice();
+
+  if (req.user.isPaidSubscriber()) {
+    if (!req.user.stripeCustomerId) {
+      throw new AppError("This account is already Pro.", 409, "ALREADY_SUBSCRIBED");
+    }
+
+    const session = await createPortalSession(req.user.stripeCustomerId);
+    return res.json({ url: session.url, type: "portal" });
+  }
+
   const stripe = getStripe();
   const customerId = await getOrCreateCustomer(req.user);
 
@@ -62,41 +124,44 @@ const createBillingPortalSession = asyncHandler(async (req, res) => {
     throw new AppError("No Stripe customer exists for this account yet.", 404, "NO_CUSTOMER");
   }
 
-  const stripe = getStripe();
-  const session = await stripe.billingPortal.sessions.create({
-    customer: req.user.stripeCustomerId,
-    return_url: `${config.clientUrl}/dashboard`
-  });
+  const session = await createPortalSession(req.user.stripeCustomerId);
 
   res.json({ url: session.url });
 });
 
 const syncSubscription = async (subscription) => {
-  const customerId =
-    typeof subscription.customer === "string"
-      ? subscription.customer
-      : subscription.customer?.id;
+  const user = await findUserForSubscription(subscription);
+  const customerId = getStripeId(subscription.customer);
+  const subscriptionId = getStripeId(subscription);
 
-  if (!customerId) return null;
+  if (!user || !customerId) return null;
 
-  return User.findOneAndUpdate(
-    { stripeCustomerId: customerId },
-    {
-      $set: {
-        subscriptionStatus: subscription.status || "inactive",
-        subscriptionCurrentPeriodEnd: subscription.current_period_end
-          ? new Date(subscription.current_period_end * 1000)
-          : undefined
-      }
-    },
-    { new: true }
-  );
+  const periodEnd = getSubscriptionPeriodEnd(subscription);
+  const subscriptionStatus = subscriptionIncludesConfiguredPrice(subscription)
+    ? subscription.status || "inactive"
+    : "inactive";
+
+  user.stripeCustomerId = customerId;
+  user.stripeSubscriptionId = subscriptionId || user.stripeSubscriptionId;
+  user.subscriptionStatus = subscriptionStatus;
+  user.subscriptionCurrentPeriodEnd = periodEnd ? new Date(periodEnd * 1000) : null;
+
+  await user.save();
+  return user;
 };
 
 const handleStripeWebhook = asyncHandler(async (req, res) => {
   const stripe = getStripe();
   const signature = req.headers["stripe-signature"];
   let event;
+
+  if (config.env === "production" && !config.stripe.webhookSecret) {
+    throw new AppError(
+      "STRIPE_WEBHOOK_SECRET is required for production billing webhooks.",
+      503,
+      "STRIPE_WEBHOOK_SECRET_MISSING"
+    );
+  }
 
   try {
     event = config.stripe.webhookSecret
@@ -108,14 +173,20 @@ const handleStripeWebhook = asyncHandler(async (req, res) => {
 
   if (event.type === "checkout.session.completed") {
     const session = event.data.object;
+    const customerId = getStripeId(session.customer);
 
-    if (session.metadata?.userId && session.customer) {
+    if (session.metadata?.userId && customerId) {
       await User.findByIdAndUpdate(session.metadata.userId, {
         $set: {
-          stripeCustomerId:
-            typeof session.customer === "string" ? session.customer : session.customer.id
+          stripeCustomerId: customerId
         }
       });
+    }
+
+    const subscriptionId = getStripeId(session.subscription);
+    if (subscriptionId) {
+      const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+      await syncSubscription(subscription);
     }
   }
 
@@ -131,8 +202,7 @@ const handleStripeWebhook = asyncHandler(async (req, res) => {
 
   if (event.type === "invoice.payment_succeeded") {
     const invoice = event.data.object;
-    const customerId =
-      typeof invoice.customer === "string" ? invoice.customer : invoice.customer?.id;
+    const customerId = getStripeId(invoice.customer);
     const user = await User.findOne({ stripeCustomerId: customerId });
 
     if (user) {

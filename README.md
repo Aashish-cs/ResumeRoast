@@ -19,6 +19,9 @@ ResumeRoast is a deployed full-stack resume review app. Users create an account,
 - ATS score, letter grade, roast, issue list, and full rewritten resume.
 - PDF and DOCX downloads for rewritten resumes.
 - One free analysis and rewrite per account.
+- Stripe Checkout for the $9/month Pro plan.
+- Stripe Billing Portal for subscription management.
+- Stripe webhooks that sync subscription status back into MongoDB.
 - Server-side usage enforcement so users cannot bypass limits from the frontend.
 - No fake AI fallback. If Claude is unavailable, the app returns a real retry/error state.
 
@@ -47,6 +50,7 @@ ResumeRoast is a deployed full-stack resume review app. Users create an account,
 | Auth | JWT, bcrypt password hashing |
 | Resume parsing | Server-side PDF text extraction |
 | Exports | PDFKit and DOCX generation |
+| Billing | Stripe Checkout, Stripe Billing Portal, Stripe webhooks |
 | Deployment | Vercel frontend, Render backend |
 
 ## Architecture
@@ -57,7 +61,8 @@ flowchart LR
   A --> B["Render Express API"]
   B --> C["MongoDB Atlas"]
   B --> D["Claude Haiku API"]
-  B --> E["PDF/DOCX rewrite downloads"]
+  B --> E["Stripe Checkout + webhooks"]
+  B --> F["PDF/DOCX rewrite downloads"]
 ```
 
 ## Core Flow
@@ -70,6 +75,19 @@ flowchart LR
 6. Claude returns structured JSON: score, grade, roast, issues, and rewrite.
 7. The analysis is saved to MongoDB Atlas.
 8. The user can revisit the result from the dashboard and download the rewrite as PDF or DOCX.
+
+## Billing Flow
+
+ResumeRoast uses Stripe-hosted checkout instead of collecting card details in the app.
+
+1. A logged-in user clicks Subscribe with Stripe.
+2. The API creates or reuses a Stripe customer for that MongoDB user.
+3. Stripe Checkout handles payment for the `$9/month` recurring price.
+4. Stripe redirects successful checkouts back to the dashboard.
+5. Stripe sends webhooks to `/api/billing/webhook`.
+6. The webhook stores `stripeCustomerId`, `stripeSubscriptionId`, `subscriptionStatus`, and the current period end date on the user record.
+7. The analysis controller checks the user's MongoDB subscription status before allowing Pro usage.
+8. Pro users get 10 analyses per day. Free users get 1 total analysis and rewrite.
 
 ## AI Behavior
 
@@ -89,6 +107,7 @@ The backend does not invent a fake result when Claude fails. Rate limits, missin
 
 - `ANTHROPIC_API_KEY` stays server-side.
 - `MONGODB_URI` stays server-side.
+- `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` stay server-side.
 - JWT protects uploads, dashboard, result pages, and downloads.
 - Passwords are hashed with bcrypt.
 - Security answers are normalized and hashed with bcrypt.
@@ -98,6 +117,7 @@ The backend does not invent a fake result when Claude fails. Rate limits, missin
 - Claude output is capped with `ANTHROPIC_MAX_OUTPUT_TOKENS`.
 - Express rate limiting is enabled on `/api` routes.
 - Helmet and CORS are configured for production.
+- Production billing webhooks require Stripe signature verification.
 
 ## Production Deployment
 
@@ -107,6 +127,7 @@ The backend does not invent a fake result when Claude fails. Rate limits, missin
 | Backend | [Render](https://resumeroast-api.onrender.com/api/health) |
 | Database | MongoDB Atlas |
 | AI provider | Anthropic Claude Haiku |
+| Billing | Stripe Checkout and webhooks |
 
 ### Render API
 
@@ -133,6 +154,33 @@ FREE_ANALYSIS_LIMIT=1
 PRO_DAILY_ANALYSIS_LIMIT=10
 RESUME_MAX_BYTES=5242880
 RESUME_MAX_CHARS=12000
+STRIPE_SECRET_KEY=sk_live_or_test_...
+STRIPE_PRICE_ID=price_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+STRIPE_SUCCESS_URL=https://resume-roast-client.vercel.app/dashboard?checkout=success
+STRIPE_CANCEL_URL=https://resume-roast-client.vercel.app/pricing?checkout=cancelled
+```
+
+### Stripe
+
+The Stripe integration is ready for a test or live Stripe account.
+
+```text
+Product: ResumeRoast Pro
+Price: $9/month recurring
+Checkout endpoint: POST /api/billing/checkout-session
+Portal endpoint: POST /api/billing/portal-session
+Webhook endpoint: https://resumeroast-api.onrender.com/api/billing/webhook
+```
+
+Webhook events used by the app:
+
+```text
+checkout.session.completed
+customer.subscription.created
+customer.subscription.updated
+customer.subscription.deleted
+invoice.payment_succeeded
 ```
 
 ### Vercel Client
@@ -178,6 +226,10 @@ ANTHROPIC_MODEL=claude-haiku-4-5-20251001
 ANTHROPIC_MAX_OUTPUT_TOKENS=3200
 USE_DEMO_AI=false
 FREE_ANALYSIS_LIMIT=1
+PRO_DAILY_ANALYSIS_LIMIT=10
+STRIPE_SECRET_KEY=sk_test_...
+STRIPE_PRICE_ID=price_...
+STRIPE_WEBHOOK_SECRET=whsec_...
 ```
 
 Run both apps:

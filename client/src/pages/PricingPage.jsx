@@ -1,6 +1,6 @@
 import { CheckCircle2, CreditCard, Loader2 } from "lucide-react";
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { apiRequest } from "../lib/api";
 
@@ -8,7 +8,10 @@ const PricingPage = () => {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const isPaid = ["active", "trialing"].includes(user?.subscriptionStatus);
+  const checkoutStatus = searchParams.get("checkout");
 
   const subscribe = async () => {
     if (!user) {
@@ -20,7 +23,8 @@ const PricingPage = () => {
     setError("");
 
     try {
-      const data = await apiRequest("/billing/checkout-session", { method: "POST" });
+      const path = isPaid ? "/billing/portal-session" : "/billing/checkout-session";
+      const data = await apiRequest(path, { method: "POST" });
       window.location.href = data.url;
     } catch (requestError) {
       setError(requestError.message);
@@ -65,6 +69,18 @@ const PricingPage = () => {
           ))}
         </div>
 
+        {checkoutStatus === "cancelled" && (
+          <div className="mt-5 rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-sm font-semibold text-zinc-700">
+            Checkout was cancelled. Your free account is still active.
+          </div>
+        )}
+
+        {isPaid && (
+          <div className="mt-5 rounded-lg border border-teal-200 bg-teal-50 p-3 text-sm font-semibold text-teal-800">
+            You are already on Pro. Use the billing portal to manage your plan.
+          </div>
+        )}
+
         {error && (
           <div className="mt-5 rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">
             {error}
@@ -73,7 +89,7 @@ const PricingPage = () => {
 
         <button className="button-primary mt-7 w-full" onClick={subscribe} disabled={loading}>
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
-          Subscribe with Stripe
+          {isPaid ? "Manage billing" : "Subscribe with Stripe"}
         </button>
       </div>
 

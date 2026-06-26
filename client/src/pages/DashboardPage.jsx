@@ -1,6 +1,6 @@
 import { CreditCard, FileText, Loader2, UploadCloud } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { apiRequest } from "../lib/api";
 
@@ -10,7 +10,14 @@ const DashboardPage = () => {
   const [loading, setLoading] = useState(true);
   const [portalLoading, setPortalLoading] = useState(false);
   const [error, setError] = useState("");
+  const [searchParams] = useSearchParams();
   const freeUsed = user.freeAnalysesUsed || 0;
+  const checkoutStatus = searchParams.get("checkout");
+  const canManageBilling =
+    user.hasStripeCustomer ||
+    ["active", "trialing", "past_due", "unpaid", "incomplete"].includes(
+      user.subscriptionStatus
+    );
 
   useEffect(() => {
     const loadDashboard = async () => {
@@ -63,6 +70,12 @@ const DashboardPage = () => {
         </div>
       )}
 
+      {checkoutStatus === "success" && (
+        <div className="mb-6 rounded-lg border border-teal-200 bg-teal-50 p-4 text-sm font-semibold text-teal-800">
+          Payment received. Your Pro access updates here as soon as Stripe sends the webhook.
+        </div>
+      )}
+
       <div className="grid gap-6 lg:grid-cols-[0.8fr_1.2fr]">
         <div className="panel p-5">
           <h2 className="font-black">Account</h2>
@@ -85,14 +98,21 @@ const DashboardPage = () => {
             </div>
           </div>
 
-          <button
-            className="button-secondary mt-6 w-full"
-            onClick={openPortal}
-            disabled={portalLoading}
-          >
-            {portalLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
-            Manage billing
-          </button>
+          {canManageBilling ? (
+            <button
+              className="button-secondary mt-6 w-full"
+              onClick={openPortal}
+              disabled={portalLoading}
+            >
+              {portalLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
+              Manage billing
+            </button>
+          ) : (
+            <Link to="/pricing" className="button-secondary mt-6 w-full">
+              <CreditCard className="h-4 w-4" />
+              Upgrade to Pro
+            </Link>
+          )}
         </div>
 
         <div className="panel overflow-hidden">

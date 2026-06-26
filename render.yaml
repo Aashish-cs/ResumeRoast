@@ -26,6 +26,16 @@ services:
         value: 1
       - key: PRO_DAILY_ANALYSIS_LIMIT
         value: 10
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_PRICE_ID
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: STRIPE_SUCCESS_URL
+        sync: false
+      - key: STRIPE_CANCEL_URL
+        sync: false
       - key: RESUME_MAX_BYTES
         value: 5242880
       - key: RESUME_MAX_CHARS

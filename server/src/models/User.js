@@ -44,7 +44,12 @@ const userSchema = new mongoose.Schema(
       default: 0,
       min: 0
     },
-    stripeCustomerId: String,
+    stripeCustomerId: {
+      type: String,
+      index: true,
+      sparse: true
+    },
+    stripeSubscriptionId: String,
     subscriptionStatus: {
       type: String,
       enum: [
@@ -55,7 +60,8 @@ const userSchema = new mongoose.Schema(
         "canceled",
         "unpaid",
         "incomplete",
-        "incomplete_expired"
+        "incomplete_expired",
+        "paused"
       ],
       default: "inactive"
     },
@@ -76,6 +82,7 @@ userSchema.methods.toSafeJSON = function toSafeJSON() {
     emailVerified: this.emailVerified,
     hasUsedFreeAnalysis: this.hasUsedFreeAnalysis,
     freeAnalysesUsed: this.freeAnalysesUsed || 0,
+    hasStripeCustomer: Boolean(this.stripeCustomerId),
     subscriptionStatus: this.subscriptionStatus,
     subscriptionCurrentPeriodEnd: this.subscriptionCurrentPeriodEnd
   };
