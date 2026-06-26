@@ -8,6 +8,53 @@ Be blunt, witty, and specific, but do not insult protected traits or personal id
 Return valid JSON matching the schema. No markdown fences, no preamble.
 If rewrite is not requested, set rewrite to null and do not draft the improved resume.`;
 
+const REWRITE_FORMAT_GUIDE = `When includeRewrite is true, format rewrite as a compact, ATS-friendly new-grad resume.
+
+Use this plain-text structure, omitting sections that are not supported by the source resume:
+
+Full Name
+City, ST | phone | email | LinkedIn | GitHub | portfolio
+
+Summary
+One concise paragraph tailored to the candidate's strongest target role.
+
+Education
+School, Location
+Degree | Graduation date
+GPA, honors, scholarships, and relevant coursework only when present.
+
+Technical Skills
+Languages: ...
+AI & Automation: ...
+Backend & APIs: ...
+Frontend: ...
+Infrastructure: ...
+Concepts: ...
+
+Projects
+Project Name - Project Type
+Tech stack
+- Action-led bullet with outcome, scope, or shipped feature.
+- Action-led bullet with technologies and concrete impact when supported.
+
+Experience
+Company - Role
+Location | Dates
+- Action-led bullet with responsibility plus impact.
+- Action-led bullet with tools, users, or measurable result when supported.
+
+Leadership & Awards
+- Leadership, honors, scholarships, awards, or campus involvement.
+
+Rules for rewrite:
+- Use plain text only. No markdown fences, no tables, no commentary.
+- Use Title Case section headings exactly like the guide.
+- Prefer Projects before Experience for recent CS grads when projects are more technical than work history.
+- Preserve true names, schools, companies, dates, degrees, links, and locations from the resume.
+- Never invent contact details, dates, degrees, employers, metrics, certifications, links, or GPA.
+- Improve wording and organization, but keep claims grounded in the resume text.
+- Use ASCII characters only. Use "- " for bullets and "|" for separators.`;
+
 const responseSchema = {
   type: Type.OBJECT,
   properties: {
@@ -31,7 +78,8 @@ const responseSchema = {
     rewrite: {
       type: Type.STRING,
       nullable: true,
-      description: "Full improved resume text, or null when rewrite is not requested"
+      description:
+        "Full improved resume text in the requested compact resume format, or null when rewrite is not requested"
     }
   },
   required: ["score", "grade", "roast", "issues", "rewrite"]
@@ -52,21 +100,36 @@ const demoAnalysis = ({ includeRewrite }) => ({
     "Projects need clearer business or user impact."
   ],
   rewrite: includeRewrite
-    ? `SUMMARY
-Results-oriented software engineer with experience building full-stack applications, integrating APIs, and shipping practical user-facing features. Strong foundation in Java, JavaScript, React, Node.js, and MongoDB.
+    ? `Candidate Name
+City, ST | email@example.com | linkedin.com/in/candidate | github.com/candidate
 
-EXPERIENCE
-- Built and maintained full-stack features across React, Express, and MongoDB with a focus on readable code and reliable user flows.
-- Integrated third-party services including payments, email, cloud storage, and AI APIs while protecting secrets and user data.
-- Improved project structure, documentation, and setup steps to make local development faster for new contributors.
+Summary
+Early-career software engineer with experience building full-stack web applications, integrating APIs, and shipping practical user-facing features. Strong foundation in JavaScript, React, Node.js, Express, MongoDB, and REST API design.
 
-PROJECTS
-ResumeRoast
-- Built a freemium resume analysis SaaS with authentication, PDF upload, AI scoring, Stripe subscriptions, and server-side access control.
-- Implemented backend gating so paid resume rewrites are generated and returned only for active subscribers.
+Education
+University Name, City, ST
+B.S. Computer Science | Graduation Date
+Relevant Coursework: Data Structures, Algorithms, Database Systems, Software Engineering
 
-SKILLS
-Java, JavaScript, React, Node.js, Express, MongoDB, REST APIs, AWS S3, Stripe, Git`
+Technical Skills
+Languages: JavaScript, Java, SQL, HTML, CSS
+Backend & APIs: Node.js, Express, REST APIs, JWT
+Frontend: React, Vite, Tailwind CSS
+Infrastructure: MongoDB, Git, GitHub, cloud deployment
+Concepts: Authentication, access control, API integration, responsive design
+
+Projects
+ResumeRoast - Full-Stack Resume Analysis SaaS
+React, Node.js, Express, MongoDB, Gemini API
+- Built a freemium resume analysis app with authentication, PDF upload, AI scoring, roast feedback, and downloadable rewrites.
+- Implemented server-side usage limits so free users receive two analyses while subscribers receive a higher daily allowance.
+- Added security-question password recovery, environment-based configuration, and API fallback handling for local development.
+
+Experience
+Software Project Contributor - Full-Stack Development
+Remote | 2026
+- Developed user-facing workflows across React and Express with a focus on readable code, practical UX, and maintainable API routes.
+- Integrated third-party services while keeping secrets server-side and documenting local setup for future contributors.`
     : null,
   usage: { inputTokens: 0, outputTokens: 0 }
 });
@@ -128,7 +191,7 @@ const generateWithModel = async ({ client, model, prompt, includeRewrite }) => {
     config: {
       systemInstruction: SYSTEM_PROMPT,
       temperature: 0.4,
-      maxOutputTokens: includeRewrite ? 4200 : 1400,
+      maxOutputTokens: includeRewrite ? 5200 : 1400,
       responseMimeType: "application/json",
       responseSchema
     }
@@ -160,6 +223,9 @@ Access rule:
 - includeRewrite is ${includeRewrite}
 - If includeRewrite is false, set rewrite to null.
 - If includeRewrite is true, include a complete improved resume in rewrite.
+
+Rewrite format guide:
+${REWRITE_FORMAT_GUIDE}
 
 Resume text:
 ${resumeText}`;

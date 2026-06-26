@@ -2,6 +2,7 @@ import { Download, FileText, Flame, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import LockedRewrite from "../components/LockedRewrite";
+import RewritePreview from "../components/RewritePreview";
 import ScoreBadge from "../components/ScoreBadge";
 import { apiRequest, downloadRewrite } from "../lib/api";
 
@@ -128,9 +129,7 @@ const ResultsPage = () => {
                   </button>
                 </div>
               </div>
-              <pre className="whitespace-pre-wrap p-5 text-sm leading-7 text-zinc-700">
-                {analysis.rewrite}
-              </pre>
+              <RewritePreview text={analysis.rewrite} />
             </div>
           ) : (
             <LockedRewrite />

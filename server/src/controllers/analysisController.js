@@ -1,4 +1,4 @@
-const { Document, Packer, Paragraph, TextRun } = require("docx");
+const { AlignmentType, Document, Packer, Paragraph, TextRun } = require("docx");
 const PDFDocument = require("pdfkit");
 const Analysis = require("../models/Analysis");
 const User = require("../models/User");
@@ -8,6 +8,17 @@ const asyncHandler = require("../utils/asyncHandler");
 const { analyzeResumeWithAi } = require("../services/aiService");
 const { extractTextFromPdf, hashResumeText } = require("../services/pdfService");
 const { uploadResumeToS3 } = require("../services/s3Service");
+
+const REWRITE_SECTION_HEADINGS = new Set([
+  "Summary",
+  "Education",
+  "Technical Skills",
+  "Projects",
+  "Experience",
+  "Leadership & Awards",
+  "Awards",
+  "Certifications"
+]);
 
 const serializeAnalysis = (analysis, canViewRewrite) => {
   const rewriteUnlocked = Boolean(canViewRewrite && analysis.rewriteUnlocked && analysis.rewrite);
@@ -187,6 +198,125 @@ const requireDownloadableRewrite = async (req) => {
   return analysis;
 };
 
+const getRewriteLines = (rewrite) => rewrite.split(/\r?\n/).map((line) => line.trim());
+
+const getContentIndexes = (lines) =>
+  lines
+    .map((line, index) => ({ line, index }))
+    .filter(({ line }) => line)
+    .map(({ index }) => index);
+
+const renderRewritePdf = (doc, rewrite) => {
+  const lines = getRewriteLines(rewrite);
+  const contentIndexes = getContentIndexes(lines);
+  const firstContentIndex = contentIndexes[0];
+  const secondContentIndex = contentIndexes[1];
+
+  lines.forEach((line, index) => {
+    if (!line) {
+      doc.moveDown(0.45);
+      return;
+    }
+
+    if (index === firstContentIndex) {
+      doc
+        .font("Times-Bold")
+        .fontSize(20)
+        .fillColor("#18181b")
+        .text(line, { align: "center" });
+      return;
+    }
+
+    if (index === secondContentIndex) {
+      doc
+        .font("Times-Roman")
+        .fontSize(10)
+        .fillColor("#3f3f46")
+        .text(line, { align: "center", lineGap: 2 });
+      return;
+    }
+
+    if (REWRITE_SECTION_HEADINGS.has(line)) {
+      doc.moveDown(0.55);
+      doc.font("Times-Bold").fontSize(13).fillColor("#18181b").text(line);
+      doc
+        .moveTo(doc.page.margins.left, doc.y)
+        .lineTo(doc.page.width - doc.page.margins.right, doc.y)
+        .strokeColor("#18181b")
+        .lineWidth(0.4)
+        .stroke();
+      doc.moveDown(0.25);
+      return;
+    }
+
+    if (line.startsWith("- ")) {
+      doc
+        .font("Times-Roman")
+        .fontSize(10.5)
+        .fillColor("#27272a")
+        .text(`- ${line.slice(2)}`, { indent: 14, hangingIndent: 8, lineGap: 2 });
+      return;
+    }
+
+    const labelMatch = line.match(/^([^:]{2,32}):\s*(.*)$/);
+
+    if (labelMatch) {
+      doc
+        .font("Times-Bold")
+        .fontSize(10.5)
+        .fillColor("#18181b")
+        .text(`${labelMatch[1]}:`, { continued: true });
+      doc.font("Times-Roman").fillColor("#27272a").text(` ${labelMatch[2]}`, {
+        lineGap: 2
+      });
+      return;
+    }
+
+    doc.font("Times-Roman").fontSize(10.5).fillColor("#27272a").text(line, {
+      lineGap: 2
+    });
+  });
+};
+
+const buildRewriteDocxChildren = (rewrite) => {
+  const lines = getRewriteLines(rewrite);
+  const contentIndexes = getContentIndexes(lines);
+  const firstContentIndex = contentIndexes[0];
+  const secondContentIndex = contentIndexes[1];
+
+  return lines.map((line, index) => {
+    if (!line) {
+      return new Paragraph({ text: "" });
+    }
+
+    if (index === firstContentIndex) {
+      return new Paragraph({
+        alignment: AlignmentType.CENTER,
+        children: [new TextRun({ text: line, bold: true, size: 32 })]
+      });
+    }
+
+    if (index === secondContentIndex) {
+      return new Paragraph({
+        alignment: AlignmentType.CENTER,
+        children: [new TextRun({ text: line, size: 20 })]
+      });
+    }
+
+    if (REWRITE_SECTION_HEADINGS.has(line)) {
+      return new Paragraph({
+        spacing: { before: 220, after: 80 },
+        children: [new TextRun({ text: line, bold: true, size: 26 })]
+      });
+    }
+
+    return new Paragraph({
+      spacing: { after: 60 },
+      children: [new TextRun(line)]
+    });
+  });
+};
+
 const downloadRewritePdf = asyncHandler(async (req, res) => {
   const analysis = await requireDownloadableRewrite(req);
   const doc = new PDFDocument({ margin: 54 });
@@ -198,23 +328,13 @@ const downloadRewritePdf = asyncHandler(async (req, res) => {
   );
 
   doc.pipe(res);
-  doc.fontSize(20).text("ResumeRoast Rewrite", { underline: true });
-  doc.moveDown();
-  doc.fontSize(11).text(analysis.rewrite, {
-    lineGap: 4,
-    align: "left"
-  });
+  renderRewritePdf(doc, analysis.rewrite);
   doc.end();
 });
 
 const downloadRewriteDocx = asyncHandler(async (req, res) => {
   const analysis = await requireDownloadableRewrite(req);
-  const children = analysis.rewrite.split(/\n+/).map(
-    (line) =>
-      new Paragraph({
-        children: [new TextRun(line.trim() || " ")]
-      })
-  );
+  const children = buildRewriteDocxChildren(analysis.rewrite);
   const doc = new Document({
     sections: [
       {
