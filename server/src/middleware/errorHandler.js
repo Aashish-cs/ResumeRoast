@@ -27,6 +27,11 @@ const errorHandler = (err, req, res, next) => {
     code: err.code || "SERVER_ERROR"
   };
 
+  if (err.retryAfterSeconds) {
+    res.setHeader("Retry-After", String(err.retryAfterSeconds));
+    payload.retryAfterSeconds = err.retryAfterSeconds;
+  }
+
   if (process.env.NODE_ENV !== "production") {
     payload.stack = err.stack;
   }

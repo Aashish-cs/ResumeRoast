@@ -24,7 +24,6 @@ const config = {
   freeAnalysisLimit: numberFromEnv("FREE_ANALYSIS_LIMIT", 2),
   proDailyAnalysisLimit: numberFromEnv("PRO_DAILY_ANALYSIS_LIMIT", 10),
   useDemoAi: process.env.USE_DEMO_AI === "true",
-  allowAiFallback: process.env.ALLOW_AI_FALLBACK !== "false",
   gemini: {
     apiKey: process.env.GEMINI_API_KEY || "",
     model: process.env.GEMINI_MODEL || "gemini-2.5-flash-lite",

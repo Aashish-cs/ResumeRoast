@@ -89,9 +89,9 @@ For local development, `.env.example` sets:
 USE_DEMO_AI=true
 ```
 
-That makes the backend return a realistic fake AI response so you can test
-signup, upload, results, dashboard, and paywall UI before wiring every external
-service.
+That makes the backend return a clearly labeled local placeholder so you can
+test signup, upload, results, dashboard, and paywall UI before wiring every
+external service.
 
 To use Gemini for real:
 
@@ -100,13 +100,12 @@ USE_DEMO_AI=false
 GEMINI_API_KEY=your-key
 GEMINI_MODEL=gemini-2.5-flash-lite
 GEMINI_FALLBACK_MODELS=gemini-2.0-flash-lite,gemini-2.0-flash
-ALLOW_AI_FALLBACK=true
 ```
 
 The backend tries the primary Gemini model first, then fallback Gemini models if
-Google returns a temporary free-tier/high-demand error. If those are also busy,
-`ALLOW_AI_FALLBACK=true` lets the portfolio demo return a fake analysis instead
-of crashing.
+Google returns a temporary free-tier/high-demand error. If those are also busy
+or rate-limited, the API returns a wait/retry message with `retryAfterSeconds`
+instead of inventing a fake analysis.
 
 ## Stripe Setup
 

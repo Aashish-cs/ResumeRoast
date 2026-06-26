@@ -85,58 +85,100 @@ const responseSchema = {
   required: ["score", "grade", "roast", "issues", "rewrite"]
 };
 
-const demoAnalysis = ({ includeRewrite }) => ({
+const TECH_KEYWORDS = [
+  "Python",
+  "TypeScript",
+  "JavaScript",
+  "Java",
+  "SQL",
+  "React",
+  "Next.js",
+  "Node.js",
+  "Express",
+  "MongoDB",
+  "PostgreSQL",
+  "FastAPI",
+  "Spring Boot",
+  "Docker",
+  "Git",
+  "GitHub",
+  "Vercel",
+  "Render",
+  "AWS",
+  "Tailwind CSS"
+];
+
+const cleanResumeLines = (resumeText = "") =>
+  resumeText
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+
+const isContactLine = (line) =>
+  /@|linkedin|github|portfolio|https?:\/\/|\b\d{3}[-.)\s]?\d{3}[-.\s]?\d{4}\b/i.test(line);
+
+const normalizeBullet = (line) => line.replace(/^[•*\-]\s*/, "").trim();
+
+const getDetectedSkills = (resumeText) =>
+  TECH_KEYWORDS.filter((skill) =>
+    new RegExp(`\\b${skill.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(resumeText)
+  );
+
+const buildSourceOnlyDemoRewrite = (resumeText) => {
+  const lines = cleanResumeLines(resumeText);
+  const name = lines.find((line) => !isContactLine(line) && line.length <= 80) || "Resume Rewrite";
+  const contact = lines.filter(isContactLine).slice(0, 2).join(" | ");
+  const skills = getDetectedSkills(resumeText);
+  const highlights = lines
+    .filter((line) => /^[•*\-]\s+/.test(line) || /\b(built|developed|implemented|created|led|managed|designed|analyzed|optimized|taught|conducted|deployed)\b/i.test(line))
+    .map(normalizeBullet)
+    .filter((line) => line.length > 20)
+    .slice(0, 6);
+
+  const rewrite = [name];
+
+  if (contact) {
+    rewrite.push(contact);
+  }
+
+  rewrite.push(
+    "",
+    "Summary",
+    "Demo mode is enabled, so this local preview keeps claims limited to the uploaded resume. Configure Gemini to generate the full AI rewrite.",
+    ""
+  );
+
+  if (skills.length) {
+    rewrite.push("Technical Skills", `Tools & Technologies: ${skills.join(", ")}`, "");
+  }
+
+  if (highlights.length) {
+    rewrite.push("Resume Highlights", ...highlights.map((line) => `- ${line}`));
+  } else {
+    rewrite.push(
+      "Extracted Resume Text",
+      ...lines.slice(0, 8).map((line) => `- ${normalizeBullet(line)}`)
+    );
+  }
+
+  return rewrite.join("\n");
+};
+
+const demoAnalysis = ({ includeRewrite, resumeText }) => ({
   provider: "demo",
   model: "demo-ai",
   score: 72,
   grade: "B-",
   roast:
-    "This resume has potential, but right now it reads like it was assembled during a fire drill in a spreadsheet. The bones are there; the impact needs a louder microphone.",
+    "Demo mode is on, so this is a local placeholder review. The real roast and rewrite require Gemini to be available.",
   issues: [
-    "Several bullets describe responsibilities instead of measurable outcomes.",
-    "The summary is broad and could fit too many candidates.",
-    "Technical skills need tighter grouping for ATS keyword matching.",
-    "Experience bullets should start with stronger action verbs.",
-    "Projects need clearer business or user impact."
+    "Demo mode cannot judge the resume as accurately as Gemini.",
+    "Use stronger action verbs and outcomes where the source resume supports them.",
+    "Group technical skills into recruiter-friendly categories.",
+    "Make project and experience bullets easy to scan."
   ],
-  rewrite: includeRewrite
-    ? `Candidate Name
-City, ST | email@example.com | linkedin.com/in/candidate | github.com/candidate
-
-Summary
-Early-career software engineer with experience building full-stack web applications, integrating APIs, and shipping practical user-facing features. Strong foundation in JavaScript, React, Node.js, Express, MongoDB, and REST API design.
-
-Education
-University Name, City, ST
-B.S. Computer Science | Graduation Date
-Relevant Coursework: Data Structures, Algorithms, Database Systems, Software Engineering
-
-Technical Skills
-Languages: JavaScript, Java, SQL, HTML, CSS
-Backend & APIs: Node.js, Express, REST APIs, JWT
-Frontend: React, Vite, Tailwind CSS
-Infrastructure: MongoDB, Git, GitHub, cloud deployment
-Concepts: Authentication, access control, API integration, responsive design
-
-Projects
-ResumeRoast - Full-Stack Resume Analysis SaaS
-React, Node.js, Express, MongoDB, Gemini API
-- Built a freemium resume analysis app with authentication, PDF upload, AI scoring, roast feedback, and downloadable rewrites.
-- Implemented server-side usage limits so free users receive two analyses while subscribers receive a higher daily allowance.
-- Added security-question password recovery, environment-based configuration, and API fallback handling for local development.
-
-Experience
-Software Project Contributor - Full-Stack Development
-Remote | 2026
-- Developed user-facing workflows across React and Express with a focus on readable code, practical UX, and maintainable API routes.
-- Integrated third-party services while keeping secrets server-side and documenting local setup for future contributors.`
-    : null,
+  rewrite: includeRewrite ? buildSourceOnlyDemoRewrite(resumeText) : null,
   usage: { inputTokens: 0, outputTokens: 0 }
-});
-
-const demoFallbackAnalysis = ({ includeRewrite }) => ({
-  ...demoAnalysis({ includeRewrite }),
-  model: "demo-ai-fallback"
 });
 
 const getGeminiClient = () => {
@@ -184,6 +226,95 @@ const getModelAttempts = () => {
   return [...new Set(attempts.filter(Boolean))];
 };
 
+const parseRetryDelaySeconds = (value) => {
+  if (!value) return null;
+
+  if (typeof value === "string") {
+    const secondMatch = value.match(/^(\d+(?:\.\d+)?)s$/i);
+    if (secondMatch) {
+      return Math.max(1, Math.ceil(Number(secondMatch[1])));
+    }
+
+    const minuteMatch = value.match(/^(\d+(?:\.\d+)?)m$/i);
+    if (minuteMatch) {
+      return Math.max(1, Math.ceil(Number(minuteMatch[1]) * 60));
+    }
+  }
+
+  if (typeof value === "object") {
+    const seconds = Number(value.seconds || 0);
+    const nanos = Number(value.nanos || 0);
+
+    if (Number.isFinite(seconds) || Number.isFinite(nanos)) {
+      return Math.max(1, Math.ceil(seconds + nanos / 1_000_000_000));
+    }
+  }
+
+  return null;
+};
+
+const findRetryAfterSeconds = (value, seen = new Set()) => {
+  if (!value) return null;
+
+  if (typeof value === "string") {
+    const retryDelayJson = value.match(/"retryDelay"\s*:\s*"([^"]+)"/i);
+    if (retryDelayJson) {
+      return parseRetryDelaySeconds(retryDelayJson[1]);
+    }
+
+    const retryDelayText = value.match(/retryDelay[^0-9]*(\d+(?:\.\d+)?s)/i);
+    if (retryDelayText) {
+      return parseRetryDelaySeconds(retryDelayText[1]);
+    }
+
+    return null;
+  }
+
+  if (typeof value !== "object" || seen.has(value)) return null;
+  seen.add(value);
+
+  if (typeof value.message === "string") {
+    const parsed = findRetryAfterSeconds(value.message, seen);
+    if (parsed) return parsed;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(value, "retryDelay")) {
+    const parsed = parseRetryDelaySeconds(value.retryDelay);
+    if (parsed) return parsed;
+  }
+
+  for (const nestedValue of Object.values(value)) {
+    const parsed = findRetryAfterSeconds(nestedValue, seen);
+    if (parsed) return parsed;
+  }
+
+  return null;
+};
+
+const formatWait = (seconds) => {
+  if (seconds < 60) return `${seconds} second${seconds === 1 ? "" : "s"}`;
+
+  const minutes = Math.ceil(seconds / 60);
+  return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+};
+
+const buildAiWaitError = (error) => {
+  const status = error?.status || error?.code;
+  const retryAfterSeconds = findRetryAfterSeconds(error) || (status === 429 ? 60 : 30);
+  const isRateLimited = status === 429;
+  const waitMessage = formatWait(retryAfterSeconds);
+  const appError = new AppError(
+    isRateLimited
+      ? `Gemini is rate-limited. Please wait ${waitMessage} and try again.`
+      : `Gemini is busy right now. Please wait ${waitMessage} and try again.`,
+    isRateLimited ? 429 : 503,
+    isRateLimited ? "AI_RATE_LIMITED" : "AI_TEMPORARILY_UNAVAILABLE"
+  );
+
+  appError.retryAfterSeconds = retryAfterSeconds;
+  return appError;
+};
+
 const generateWithModel = async ({ client, model, prompt, includeRewrite }) => {
   const response = await client.models.generateContent({
     model,
@@ -212,8 +343,16 @@ const generateWithModel = async ({ client, model, prompt, includeRewrite }) => {
 };
 
 const analyzeResumeWithAi = async ({ resumeText, includeRewrite }) => {
-  if (config.useDemoAi || !config.gemini.apiKey) {
-    return demoAnalysis({ includeRewrite });
+  if (config.useDemoAi) {
+    return demoAnalysis({ includeRewrite, resumeText });
+  }
+
+  if (!config.gemini.apiKey) {
+    throw new AppError(
+      "Gemini is not configured. Add GEMINI_API_KEY on the server before running real analyses.",
+      503,
+      "AI_NOT_CONFIGURED"
+    );
   }
 
   const client = getGeminiClient();
@@ -249,8 +388,8 @@ ${resumeText}`;
     }
   }
 
-  if (config.allowAiFallback && isTransientAiError(lastError)) {
-    return demoFallbackAnalysis({ includeRewrite });
+  if (isTransientAiError(lastError)) {
+    throw buildAiWaitError(lastError);
   }
 
   throw lastError;

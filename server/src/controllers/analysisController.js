@@ -16,6 +16,8 @@ const REWRITE_SECTION_HEADINGS = new Set([
   "Projects",
   "Experience",
   "Leadership & Awards",
+  "Resume Highlights",
+  "Extracted Resume Text",
   "Awards",
   "Certifications"
 ]);

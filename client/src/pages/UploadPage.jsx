@@ -1,16 +1,34 @@
 import { FileText, Loader2, UploadCloud } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { apiRequest } from "../lib/api";
+
+const formatWait = (seconds) => {
+  if (seconds < 60) return `${seconds}s`;
+
+  const minutes = Math.ceil(seconds / 60);
+  return `${minutes}m`;
+};
 
 const UploadPage = () => {
   const [file, setFile] = useState(null);
   const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [retryAfterSeconds, setRetryAfterSeconds] = useState(0);
   const { refreshUser } = useAuth();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!retryAfterSeconds) return undefined;
+
+    const timer = window.setInterval(() => {
+      setRetryAfterSeconds((currentSeconds) => Math.max(0, currentSeconds - 1));
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [retryAfterSeconds]);
 
   const setPdfFile = (candidate) => {
     setError("");
@@ -34,6 +52,11 @@ const UploadPage = () => {
   const handleSubmit = async (event) => {
     event.preventDefault();
 
+    if (retryAfterSeconds) {
+      setError(`Gemini asked us to wait. Try again in ${formatWait(retryAfterSeconds)}.`);
+      return;
+    }
+
     if (!file) {
       setError("Choose a PDF resume first.");
       return;
@@ -53,6 +76,11 @@ const UploadPage = () => {
       navigate(`/results/${data.analysis.id}`);
     } catch (requestError) {
       setError(requestError.message);
+      if (
+        ["AI_RATE_LIMITED", "AI_TEMPORARILY_UNAVAILABLE"].includes(requestError.code)
+      ) {
+        setRetryAfterSeconds(Number(requestError.details?.retryAfterSeconds) || 60);
+      }
       if (requestError.code === "FREE_ANALYSIS_USED") {
         setTimeout(() => navigate("/pricing"), 1200);
       }
@@ -119,9 +147,12 @@ const UploadPage = () => {
           </div>
         )}
 
-        <button className="button-primary mt-6 w-full sm:w-auto" disabled={loading}>
+        <button
+          className="button-primary mt-6 w-full sm:w-auto"
+          disabled={loading || Boolean(retryAfterSeconds)}
+        >
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
-          Roast my resume
+          {retryAfterSeconds ? `Try again in ${formatWait(retryAfterSeconds)}` : "Roast my resume"}
         </button>
       </form>
     </section>
