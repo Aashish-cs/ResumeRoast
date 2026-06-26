@@ -41,7 +41,7 @@ const Layout = ({ children }) => {
   );
 
   return (
-    <div className="min-h-screen bg-[#fafafa] text-zinc-950">
+    <div className="flex min-h-screen flex-col bg-[#fafafa] text-zinc-950">
       <header className="sticky top-0 z-30 border-b border-zinc-200 bg-white/90 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
           <Link to="/" className="flex items-center gap-2 font-black tracking-tight">
@@ -120,7 +120,24 @@ const Layout = ({ children }) => {
         )}
       </header>
 
-      <main>{children}</main>
+      <main className="flex-1">{children}</main>
+
+      <footer className="border-t border-zinc-200 bg-white">
+        <div className="mx-auto flex max-w-6xl flex-col gap-3 px-4 py-6 text-sm text-zinc-500 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+          <span className="font-semibold text-zinc-700">ResumeRoast</span>
+          <nav className="flex flex-wrap gap-4">
+            <Link to="/terms" className="hover:text-zinc-950">
+              Terms
+            </Link>
+            <Link to="/privacy" className="hover:text-zinc-950">
+              Privacy
+            </Link>
+            <Link to="/refund-policy" className="hover:text-zinc-950">
+              Refunds
+            </Link>
+          </nav>
+        </div>
+      </footer>
     </div>
   );
 };

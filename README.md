@@ -22,6 +22,7 @@ ResumeRoast is a deployed full-stack resume review app. Users create an account,
 - Stripe Checkout for the $9/month Pro plan.
 - Stripe Billing Portal for subscription management.
 - Stripe webhooks that sync subscription status back into MongoDB.
+- Terms, privacy, refund, and cancellation pages for the paid launch flow.
 - Server-side usage enforcement so users cannot bypass limits from the frontend.
 - No fake AI fallback. If Claude is unavailable, the app returns a real retry/error state.
 

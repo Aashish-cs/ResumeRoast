@@ -54,7 +54,7 @@ const SignupPage = () => {
           </span>
           <div>
             <h1 className="text-2xl font-black">Create account</h1>
-            <p className="text-sm text-zinc-500">Two free roasts per account.</p>
+            <p className="text-sm text-zinc-500">One free roast and rewrite per account.</p>
           </div>
         </div>
 
@@ -147,6 +147,18 @@ const SignupPage = () => {
             Create account
           </button>
         </form>
+
+        <p className="mt-4 text-xs leading-5 text-zinc-500">
+          By creating an account, you agree to the{" "}
+          <Link to="/terms" className="font-semibold text-zinc-700 underline">
+            Terms
+          </Link>{" "}
+          and{" "}
+          <Link to="/privacy" className="font-semibold text-zinc-700 underline">
+            Privacy Policy
+          </Link>
+          .
+        </p>
 
         <div className="mt-5 text-sm text-zinc-600">
           Already have an account?{" "}

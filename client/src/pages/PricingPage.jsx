@@ -39,7 +39,7 @@ const PricingPage = () => {
         <h1 className="text-4xl font-black tracking-normal">Unlock the rewrite</h1>
         <p className="mt-3 text-zinc-600">
           Free users get 1 honest analysis with a rewrite. Subscribers get 10
-          analyses per day.
+          analyses per day and can cancel through the billing portal.
         </p>
       </div>
 
@@ -91,6 +91,25 @@ const PricingPage = () => {
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
           {isPaid ? "Manage billing" : "Subscribe with Stripe"}
         </button>
+
+        <p className="mt-4 text-center text-xs leading-5 text-zinc-500">
+          By subscribing, you agree to the{" "}
+          <Link to="/terms" className="font-semibold text-zinc-700 underline">
+            Terms
+          </Link>
+          ,{" "}
+          <Link to="/privacy" className="font-semibold text-zinc-700 underline">
+            Privacy Policy
+          </Link>
+          , and{" "}
+          <Link
+            to="/refund-policy"
+            className="font-semibold text-zinc-700 underline"
+          >
+            Refund Policy
+          </Link>
+          .
+        </p>
       </div>
 
       <div className="mt-8 text-center text-sm text-zinc-500">
