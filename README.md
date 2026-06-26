@@ -106,7 +106,7 @@ http://localhost:5173
 | --- | --- |
 | `MONGODB_URI` | MongoDB Atlas connection string |
 | `JWT_SECRET` | Secret used to sign auth tokens |
-| `CLIENT_URL` | Frontend origin allowed by CORS |
+| `CLIENT_URL` | Frontend origin allowed by CORS; comma-separate multiple origins |
 | `VITE_API_URL` | API base URL used by the React app |
 | `ANTHROPIC_API_KEY` | Server-side Claude API key |
 | `ANTHROPIC_MODEL` | Claude model, default `claude-haiku-4-5-20251001` |
@@ -163,7 +163,7 @@ POST /api/billing/webhook
 - Express rate limiting is enabled for `/api` routes.
 - Helmet and CORS are configured on the API.
 
-## Deployment Plan
+## Deployment
 
 The simplest production setup is:
 
@@ -176,6 +176,60 @@ The simplest production setup is:
 | Payments | Stripe, when billing is enabled |
 
 Production environment variables should be configured in the host dashboard, not committed to GitHub.
+
+### Backend on Render
+
+The repo includes `render.yaml` for the Express API. In Render, create a new Blueprint or Web Service from this GitHub repo.
+
+Use these settings if creating a Web Service manually:
+
+```text
+Build Command: npm install
+Start Command: npm run start --workspace server
+```
+
+Set these environment variables in Render:
+
+```env
+NODE_ENV=production
+MONGODB_URI=your-mongodb-atlas-uri
+JWT_SECRET=your-long-random-production-secret
+CLIENT_URL=https://your-vercel-app.vercel.app
+ANTHROPIC_API_KEY=your-anthropic-key
+ANTHROPIC_MODEL=claude-haiku-4-5-20251001
+ANTHROPIC_MAX_OUTPUT_TOKENS=3200
+USE_DEMO_AI=false
+FREE_ANALYSIS_LIMIT=1
+PRO_DAILY_ANALYSIS_LIMIT=10
+RESUME_MAX_BYTES=5242880
+RESUME_MAX_CHARS=12000
+```
+
+After Render deploys, test:
+
+```text
+https://your-render-service.onrender.com/api/health
+```
+
+### Frontend on Vercel
+
+The repo includes `vercel.json` for the Vite client.
+
+Set this Vercel environment variable:
+
+```env
+VITE_API_URL=https://your-render-service.onrender.com/api
+```
+
+If importing manually, use:
+
+```text
+Build Command: npm run build --workspace client
+Output Directory: client/dist
+Install Command: npm install
+```
+
+After Vercel deploys, update the Render `CLIENT_URL` value to the final Vercel URL and redeploy the backend.
 
 ## Useful Scripts
 

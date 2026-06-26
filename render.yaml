@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: resumeroast-api
+    runtime: node
+    buildCommand: npm install
+    startCommand: npm run start --workspace server
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: CLIENT_URL
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ANTHROPIC_MODEL
+        value: claude-haiku-4-5-20251001
+      - key: ANTHROPIC_MAX_OUTPUT_TOKENS
+        value: 3200
+      - key: USE_DEMO_AI
+        value: false
+      - key: FREE_ANALYSIS_LIMIT
+        value: 1
+      - key: PRO_DAILY_ANALYSIS_LIMIT
+        value: 10
+      - key: RESUME_MAX_BYTES
+        value: 5242880
+      - key: RESUME_MAX_CHARS
+        value: 12000

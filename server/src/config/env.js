@@ -12,10 +12,25 @@ const numberFromEnv = (name, fallback) => {
   return Number.isFinite(value) ? value : fallback;
 };
 
+const listFromEnv = (name, fallback) => {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+
+  const values = raw
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  return values.length ? values : fallback;
+};
+
+const clientUrls = listFromEnv("CLIENT_URL", ["http://localhost:5173"]);
+
 const config = {
   env: process.env.NODE_ENV || "development",
   port: numberFromEnv("PORT", 5001),
-  clientUrl: process.env.CLIENT_URL || "http://localhost:5173",
+  clientUrl: clientUrls[0],
+  clientUrls,
   mongoUri: process.env.MONGODB_URI || "",
   jwtSecret: process.env.JWT_SECRET || "dev-only-change-me",
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || "7d",
@@ -53,7 +68,7 @@ const config = {
 };
 
 if (config.env === "production") {
-  const required = ["MONGODB_URI", "JWT_SECRET", "CLIENT_URL"];
+  const required = ["MONGODB_URI", "JWT_SECRET", "CLIENT_URL", "ANTHROPIC_API_KEY"];
   const missing = required.filter((key) => !process.env[key]);
 
   if (missing.length) {
