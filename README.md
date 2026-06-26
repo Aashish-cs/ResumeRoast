@@ -1,19 +1,26 @@
 # ResumeRoast
 
-ResumeRoast is a full-stack resume review app that lets a user upload a PDF resume, receive an ATS-style score, get a blunt but useful roast, and download a rewritten resume. The project focuses on practical product scope: real auth, real database storage, real AI integration, and clear cost controls.
+ResumeRoast is a deployed full-stack resume review app. Users create an account, upload a PDF resume, receive an ATS-style score, get a blunt but useful roast, and download a rewritten resume formatted for recruiters.
+
+**Live app:** [resume-roast-client.vercel.app](https://resume-roast-client.vercel.app/)  
+**API health:** [resumeroast-api.onrender.com/api/health](https://resumeroast-api.onrender.com/api/health)
 
 ![ResumeRoast landing page](docs/screenshots/landing.png)
 
-## What It Does
+## What Shipped
 
-- Upload a PDF resume and extract text server-side.
-- Generate an ATS score, letter grade, roast, issue list, and rewritten resume.
-- Format rewrites as a compact, recruiter-friendly resume.
-- Store users and analyses in MongoDB Atlas.
-- Protect analysis history behind JWT authentication.
-- Give each free account one analysis and rewrite.
-- Keep Claude and database credentials server-side.
-- Support PDF and DOCX downloads for rewritten resumes.
+- Full React/Vite frontend deployed on Vercel.
+- Express API deployed on Render.
+- MongoDB Atlas production database.
+- Claude Haiku 4.5 resume analysis and rewrite generation.
+- Account signup, login, JWT auth, and protected dashboard routes.
+- Security-question password recovery.
+- PDF upload and server-side text extraction.
+- ATS score, letter grade, roast, issue list, and full rewritten resume.
+- PDF and DOCX downloads for rewritten resumes.
+- One free analysis and rewrite per account.
+- Server-side usage enforcement so users cannot bypass limits from the frontend.
+- No fake AI fallback. If Claude is unavailable, the app returns a real retry/error state.
 
 ## Screenshots
 
@@ -29,40 +36,123 @@ ResumeRoast is a full-stack resume review app that lets a user upload a PDF resu
 
 ![ResumeRoast upload page](docs/screenshots/upload.png)
 
-## Tech Stack
+## Stack
 
-| Layer | Tools |
+| Layer | Implementation |
 | --- | --- |
-| Frontend | React, Vite, Tailwind CSS, Lucide icons |
+| Frontend | React, Vite, Tailwind CSS, React Router, Lucide icons |
 | Backend | Node.js, Express, Mongoose |
 | Database | MongoDB Atlas |
 | AI | Claude Haiku 4.5 via Anthropic API |
 | Auth | JWT, bcrypt password hashing |
-| Files | PDF text extraction, PDFKit, DOCX export |
-| Payments | Stripe subscription scaffolding |
-| Optional services | AWS S3 for resume storage, SendGrid for receipt email |
+| Resume parsing | Server-side PDF text extraction |
+| Exports | PDFKit and DOCX generation |
+| Deployment | Vercel frontend, Render backend |
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-  A["React client"] --> B["Express API"]
+  U["User"] --> A["Vercel React client"]
+  A --> B["Render Express API"]
   B --> C["MongoDB Atlas"]
   B --> D["Claude Haiku API"]
-  B --> E["PDF/DOCX generation"]
-  B -. optional .-> F["Stripe"]
-  B -. optional .-> G["AWS S3"]
+  B --> E["PDF/DOCX rewrite downloads"]
 ```
 
-## Product Decisions
+## Core Flow
 
-ResumeRoast is cost-aware by design. Each free user receives one real analysis and rewrite. The backend claims that free usage before calling Claude, which prevents duplicate free requests from racing each other.
+1. A user signs up with name, email, password, and a security question.
+2. Passwords and security answers are hashed before storage.
+3. The user uploads a PDF resume.
+4. The API extracts resume text from the PDF.
+5. The backend claims the user's free analysis slot before calling Claude.
+6. Claude returns structured JSON: score, grade, roast, issues, and rewrite.
+7. The analysis is saved to MongoDB Atlas.
+8. The user can revisit the result from the dashboard and download the rewrite as PDF or DOCX.
 
-The app does not return fake AI results when Claude is unavailable. If the API is busy, rate-limited, or missing a key, the server returns a clear error instead of inventing resume content.
+## AI Behavior
 
-Email verification is intentionally not included yet. Users sign up with an email, password, and security question. Password recovery uses the security question flow.
+ResumeRoast uses Claude Haiku 4.5 with a strict JSON response contract. The rewrite is prompted into a compact new-grad resume format:
 
-## Local Setup
+- centered name and contact line
+- summary
+- education
+- grouped technical skills
+- projects
+- experience
+- leadership and awards when supported by the source resume
+
+The backend does not invent a fake result when Claude fails. Rate limits, missing keys, and temporary AI errors become explicit API errors instead of fabricated resume content.
+
+## Security and Cost Controls
+
+- `ANTHROPIC_API_KEY` stays server-side.
+- `MONGODB_URI` stays server-side.
+- JWT protects uploads, dashboard, result pages, and downloads.
+- Passwords are hashed with bcrypt.
+- Security answers are normalized and hashed with bcrypt.
+- Free usage is stored in MongoDB and enforced server-side.
+- PDF uploads are capped with `RESUME_MAX_BYTES`.
+- Extracted resume text is capped with `RESUME_MAX_CHARS`.
+- Claude output is capped with `ANTHROPIC_MAX_OUTPUT_TOKENS`.
+- Express rate limiting is enabled on `/api` routes.
+- Helmet and CORS are configured for production.
+
+## Production Deployment
+
+| Service | Deployment |
+| --- | --- |
+| Frontend | [Vercel](https://resume-roast-client.vercel.app/) |
+| Backend | [Render](https://resumeroast-api.onrender.com/api/health) |
+| Database | MongoDB Atlas |
+| AI provider | Anthropic Claude Haiku |
+
+### Render API
+
+The backend runs from the repository root.
+
+```text
+Build Command: npm install
+Start Command: npm run start --workspace server
+Health Check Path: /api/health
+```
+
+Production environment variables:
+
+```env
+NODE_ENV=production
+MONGODB_URI=mongodb+srv://...
+JWT_SECRET=...
+CLIENT_URL=https://resume-roast-client.vercel.app
+ANTHROPIC_API_KEY=...
+ANTHROPIC_MODEL=claude-haiku-4-5-20251001
+ANTHROPIC_MAX_OUTPUT_TOKENS=3200
+USE_DEMO_AI=false
+FREE_ANALYSIS_LIMIT=1
+PRO_DAILY_ANALYSIS_LIMIT=10
+RESUME_MAX_BYTES=5242880
+RESUME_MAX_CHARS=12000
+```
+
+### Vercel Client
+
+The frontend deploys from the `client` directory.
+
+```text
+Root Directory: client
+Install Command: npm install
+Build Command: npm run build
+Output Directory: dist
+```
+
+Production environment variable:
+
+```env
+VITE_API_URL=https://resumeroast-api.onrender.com/api
+```
+
+## Local Development
 
 Install dependencies:
 
@@ -70,13 +160,13 @@ Install dependencies:
 npm install
 ```
 
-Copy the environment template:
+Create `.env`:
 
 ```bash
 cp .env.example .env
 ```
 
-Fill in the required local values:
+Minimum local environment:
 
 ```env
 MONGODB_URI=mongodb+srv://USER:PASSWORD@cluster0.xxxxx.mongodb.net/resumeroast?appName=Cluster0
@@ -85,51 +175,25 @@ CLIENT_URL=http://localhost:5173
 VITE_API_URL=http://localhost:5001/api
 ANTHROPIC_API_KEY=your-anthropic-api-key
 ANTHROPIC_MODEL=claude-haiku-4-5-20251001
+ANTHROPIC_MAX_OUTPUT_TOKENS=3200
 USE_DEMO_AI=false
+FREE_ANALYSIS_LIMIT=1
 ```
 
-Start the app:
+Run both apps:
 
 ```bash
 npm run dev
 ```
 
-Open:
+Local URLs:
 
 ```text
-http://localhost:5173
+Frontend: http://localhost:5173
+API:      http://localhost:5001/api/health
 ```
 
-## Environment Variables
-
-| Variable | Purpose |
-| --- | --- |
-| `MONGODB_URI` | MongoDB Atlas connection string |
-| `JWT_SECRET` | Secret used to sign auth tokens |
-| `CLIENT_URL` | Frontend origin allowed by CORS; comma-separate multiple origins |
-| `VITE_API_URL` | API base URL used by the React app |
-| `ANTHROPIC_API_KEY` | Server-side Claude API key |
-| `ANTHROPIC_MODEL` | Claude model, default `claude-haiku-4-5-20251001` |
-| `ANTHROPIC_MAX_OUTPUT_TOKENS` | Output cap for analysis and rewrite responses |
-| `FREE_ANALYSIS_LIMIT` | Free analyses per account, default `1` |
-| `PRO_DAILY_ANALYSIS_LIMIT` | Paid daily analysis cap, default `10` |
-| `RESUME_MAX_BYTES` | Max uploaded PDF size |
-| `RESUME_MAX_CHARS` | Max extracted resume text sent to AI |
-| `STRIPE_SECRET_KEY` | Optional Stripe billing secret |
-| `AWS_S3_BUCKET` | Optional resume PDF storage bucket |
-| `SENDGRID_API_KEY` | Optional email provider key |
-
-## Demo Mode
-
-For UI testing without spending API credits:
-
-```env
-USE_DEMO_AI=true
-```
-
-Demo mode is clearly labeled and only builds a source-limited placeholder from the uploaded resume text. It is not used as a fallback when Claude fails.
-
-## API Routes
+## API Surface
 
 ```text
 POST /api/auth/signup
@@ -149,89 +213,18 @@ POST /api/billing/portal-session
 POST /api/billing/webhook
 ```
 
-## Security and Cost Controls
-
-- Passwords are hashed with bcrypt.
-- Security answers are normalized and hashed.
-- JWT auth protects uploads, dashboards, results, and downloads.
-- Claude API key stays on the server.
-- MongoDB credentials stay in environment variables.
-- PDF uploads are size-limited.
-- Extracted resume text is character-limited before AI calls.
-- Free usage is enforced server-side with MongoDB counters.
-- AI output tokens are capped with `ANTHROPIC_MAX_OUTPUT_TOKENS`.
-- Express rate limiting is enabled for `/api` routes.
-- Helmet and CORS are configured on the API.
-
-## Deployment
-
-The simplest production setup is:
-
-| Service | Suggested host |
-| --- | --- |
-| Frontend | Vercel |
-| Backend | Render |
-| Database | MongoDB Atlas |
-| AI | Anthropic API |
-| Payments | Stripe, when billing is enabled |
-
-Production environment variables should be configured in the host dashboard, not committed to GitHub.
-
-### Backend on Render
-
-The repo includes `render.yaml` for the Express API. In Render, create a new Blueprint or Web Service from this GitHub repo.
-
-Use these settings if creating a Web Service manually:
+## Repository Structure
 
 ```text
-Build Command: npm install
-Start Command: npm run start --workspace server
+ResumeRoast/
+  client/             React/Vite frontend
+  server/             Express API, Mongo models, controllers, services
+  docs/screenshots/   README screenshots
+  render.yaml         Render API deployment config
+  vercel.json         Vercel frontend deployment config
 ```
 
-Set these environment variables in Render:
-
-```env
-NODE_ENV=production
-MONGODB_URI=your-mongodb-atlas-uri
-JWT_SECRET=your-long-random-production-secret
-CLIENT_URL=https://your-vercel-app.vercel.app
-ANTHROPIC_API_KEY=your-anthropic-key
-ANTHROPIC_MODEL=claude-haiku-4-5-20251001
-ANTHROPIC_MAX_OUTPUT_TOKENS=3200
-USE_DEMO_AI=false
-FREE_ANALYSIS_LIMIT=1
-PRO_DAILY_ANALYSIS_LIMIT=10
-RESUME_MAX_BYTES=5242880
-RESUME_MAX_CHARS=12000
-```
-
-After Render deploys, test:
-
-```text
-https://your-render-service.onrender.com/api/health
-```
-
-### Frontend on Vercel
-
-The repo includes `vercel.json` for the Vite client.
-
-Set this Vercel environment variable:
-
-```env
-VITE_API_URL=https://your-render-service.onrender.com/api
-```
-
-If importing manually, use:
-
-```text
-Build Command: npm run build --workspace client
-Output Directory: client/dist
-Install Command: npm install
-```
-
-After Vercel deploys, update the Render `CLIENT_URL` value to the final Vercel URL and redeploy the backend.
-
-## Useful Scripts
+## Scripts
 
 ```bash
 npm run dev          # run frontend and backend together
@@ -241,7 +234,3 @@ npm run build        # build the frontend
 npm run start        # start the Express server
 npm run lint         # run lightweight validation
 ```
-
-## Current Status
-
-The local app is fully wired with MongoDB Atlas and Claude Haiku. Deployment is the next major step.
