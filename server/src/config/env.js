@@ -21,16 +21,13 @@ const config = {
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || "7d",
   resumeMaxBytes: numberFromEnv("RESUME_MAX_BYTES", 5 * 1024 * 1024),
   resumeMaxChars: numberFromEnv("RESUME_MAX_CHARS", 12000),
-  freeAnalysisLimit: numberFromEnv("FREE_ANALYSIS_LIMIT", 2),
+  freeAnalysisLimit: numberFromEnv("FREE_ANALYSIS_LIMIT", 1),
   proDailyAnalysisLimit: numberFromEnv("PRO_DAILY_ANALYSIS_LIMIT", 10),
   useDemoAi: process.env.USE_DEMO_AI === "true",
-  gemini: {
-    apiKey: process.env.GEMINI_API_KEY || "",
-    model: process.env.GEMINI_MODEL || "gemini-2.5-flash-lite",
-    fallbackModels: (process.env.GEMINI_FALLBACK_MODELS || "gemini-2.0-flash-lite,gemini-2.0-flash")
-      .split(",")
-      .map((model) => model.trim())
-      .filter(Boolean)
+  anthropic: {
+    apiKey: process.env.ANTHROPIC_API_KEY || "",
+    model: process.env.ANTHROPIC_MODEL || "claude-haiku-4-5-20251001",
+    maxOutputTokens: numberFromEnv("ANTHROPIC_MAX_OUTPUT_TOKENS", 3200)
   },
   aws: {
     region: process.env.AWS_REGION || "us-east-1",

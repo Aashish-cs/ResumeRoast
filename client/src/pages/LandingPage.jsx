@@ -16,7 +16,7 @@ const LandingPage = () => (
         <div className="max-w-2xl">
           <div className="inline-flex items-center gap-2 rounded-md border border-white/20 bg-white/10 px-3 py-1.5 text-sm font-semibold text-orange-100 backdrop-blur">
             <Flame className="h-4 w-4" />
-            2 free roasts. Paid daily limit.
+            1 free roast and rewrite.
           </div>
           <h1 className="mt-6 text-5xl font-black leading-tight tracking-normal sm:text-6xl">
             ResumeRoast
@@ -46,7 +46,7 @@ const LandingPage = () => (
         {[
           ["ATS score", "A 0-100 score with a recruiter-friendly letter grade.", Gauge],
           ["Free roast", "Specific weaknesses shown before any payment step.", Flame],
-          ["Free rewrites", "The first 2 analyses include full rewritten resume text.", Lock]
+          ["Free rewrite", "The first analysis includes full rewritten resume text.", Lock]
         ].map(([title, copy, Icon]) => (
           <div key={title} className="flex gap-3 rounded-lg border border-zinc-200 p-4">
             <Icon className="mt-0.5 h-5 w-5 shrink-0 text-orange-600" />
@@ -71,7 +71,7 @@ const LandingPage = () => (
           </p>
           <div className="mt-8 grid gap-3 sm:grid-cols-2">
             {[
-              "2 free analyses per verified email",
+              "1 free analysis per account",
               "Server-side subscription checks",
               "PDF text extraction before AI calls",
               "Stripe webhook status sync"

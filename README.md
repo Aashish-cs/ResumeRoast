@@ -2,13 +2,13 @@
 
 ResumeRoast is a full-stack MERN-style SaaS app where users upload a PDF resume,
 get an ATS score, receive a blunt roast, and get a rewritten resume. Free users
-get two analyses, while subscribed users get a higher daily limit.
+get one analysis and rewrite, while subscribed users get a higher daily limit.
 
 ## Stack
 
 - Frontend: React, Vite, Tailwind CSS
 - Backend: Node.js, Express, MongoDB, JWT auth
-- AI: Google Gemini using the free-tier-friendly `gemini-2.5-flash-lite` model
+- AI: Claude Haiku 4.5 through Anthropic's API
 - Storage: AWS S3 for uploaded PDFs
 - Payments: Stripe subscriptions and webhooks
 - Email: optional SendGrid receipt emails
@@ -93,19 +93,17 @@ That makes the backend return a clearly labeled local placeholder so you can
 test signup, upload, results, dashboard, and paywall UI before wiring every
 external service.
 
-To use Gemini for real:
+To use Claude for real:
 
 ```bash
 USE_DEMO_AI=false
-GEMINI_API_KEY=your-key
-GEMINI_MODEL=gemini-2.5-flash-lite
-GEMINI_FALLBACK_MODELS=gemini-2.0-flash-lite,gemini-2.0-flash
+ANTHROPIC_API_KEY=your-key
+ANTHROPIC_MODEL=claude-haiku-4-5-20251001
+ANTHROPIC_MAX_OUTPUT_TOKENS=3200
 ```
 
-The backend tries the primary Gemini model first, then fallback Gemini models if
-Google returns a temporary free-tier/high-demand error. If those are also busy
-or rate-limited, the API returns a wait/retry message with `retryAfterSeconds`
-instead of inventing a fake analysis.
+If Claude is busy or rate-limited, the API returns a wait/retry message with
+`retryAfterSeconds` instead of inventing a fake analysis.
 
 ## Stripe Setup
 
@@ -158,16 +156,18 @@ server skips S3 storage with a console message.
 
 - Free analyses are claimed atomically before the AI call to reduce
   duplicate/concurrent free usage.
-- Free users get two analyses with rewrites, enforced server-side with
+- Free users get one analysis with a rewrite, enforced server-side with
   `User.freeAnalysesUsed`.
 - Pro users are capped by `PRO_DAILY_ANALYSIS_LIMIT`, defaulting to 10 analyses
   per day, so the portfolio deployment can stay cost-aware.
-- The Gemini API key stays server-side. It is never exposed in the React app.
+- The Anthropic API key stays server-side. It is never exposed in the React app.
 - Paid status is read from MongoDB after Stripe webhook sync, not from the
   frontend.
 - PDF uploads are capped by `RESUME_MAX_BYTES`, defaulting to 5 MB.
 - Extracted resume text is capped by `RESUME_MAX_CHARS`, defaulting to 12,000
   characters, to control AI token usage.
+- With one free Claude Haiku analysis+rewrite per user, 100 normal resumes should
+  usually cost only a few dollars, depending on resume length and rewrite size.
 - Express rate limiting is enabled for `/api` routes.
 - Helmet and CORS are configured on the API.
 - S3 uploads use server-side encryption.

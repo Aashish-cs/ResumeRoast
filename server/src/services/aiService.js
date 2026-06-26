@@ -1,4 +1,4 @@
-const { GoogleGenAI, Type } = require("@google/genai");
+const Anthropic = require("@anthropic-ai/sdk");
 const config = require("../config/env");
 const AppError = require("../utils/AppError");
 
@@ -54,36 +54,6 @@ Rules for rewrite:
 - Never invent contact details, dates, degrees, employers, metrics, certifications, links, or GPA.
 - Improve wording and organization, but keep claims grounded in the resume text.
 - Use ASCII characters only. Use "- " for bullets and "|" for separators.`;
-
-const responseSchema = {
-  type: Type.OBJECT,
-  properties: {
-    score: {
-      type: Type.NUMBER,
-      description: "ATS compatibility score from 0 to 100"
-    },
-    grade: {
-      type: Type.STRING,
-      description: "Letter grade such as A, B+, C-, D, or F"
-    },
-    roast: {
-      type: Type.STRING,
-      description: "One blunt, witty, useful paragraph"
-    },
-    issues: {
-      type: Type.ARRAY,
-      items: { type: Type.STRING },
-      description: "Three to six concrete resume issues"
-    },
-    rewrite: {
-      type: Type.STRING,
-      nullable: true,
-      description:
-        "Full improved resume text in the requested compact resume format, or null when rewrite is not requested"
-    }
-  },
-  required: ["score", "grade", "roast", "issues", "rewrite"]
-};
 
 const TECH_KEYWORDS = [
   "Python",
@@ -144,7 +114,7 @@ const buildSourceOnlyDemoRewrite = (resumeText) => {
   rewrite.push(
     "",
     "Summary",
-    "Demo mode is enabled, so this local preview keeps claims limited to the uploaded resume. Configure Gemini to generate the full AI rewrite.",
+    "Demo mode is enabled, so this local preview keeps claims limited to the uploaded resume. Configure Claude to generate the full AI rewrite.",
     ""
   );
 
@@ -170,9 +140,9 @@ const demoAnalysis = ({ includeRewrite, resumeText }) => ({
   score: 72,
   grade: "B-",
   roast:
-    "Demo mode is on, so this is a local placeholder review. The real roast and rewrite require Gemini to be available.",
+    "Demo mode is on, so this is a local placeholder review. The real roast and rewrite require Claude to be available.",
   issues: [
-    "Demo mode cannot judge the resume as accurately as Gemini.",
+    "Demo mode cannot judge the resume as accurately as Claude.",
     "Use stronger action verbs and outcomes where the source resume supports them.",
     "Group technical skills into recruiter-friendly categories.",
     "Make project and experience bullets easy to scan."
@@ -181,11 +151,11 @@ const demoAnalysis = ({ includeRewrite, resumeText }) => ({
   usage: { inputTokens: 0, outputTokens: 0 }
 });
 
-const getGeminiClient = () => {
-  if (!config.gemini.apiKey) return null;
+const getAnthropicClient = () => {
+  if (!config.anthropic.apiKey) return null;
 
-  return new GoogleGenAI({
-    apiKey: config.gemini.apiKey
+  return new Anthropic({
+    apiKey: config.anthropic.apiKey
   });
 };
 
@@ -195,7 +165,17 @@ const safeParseAnalysis = (rawText, includeRewrite) => {
   try {
     data = JSON.parse(rawText);
   } catch (error) {
-    throw new AppError("Gemini returned invalid JSON. Please try again.", 502, "AI_JSON_ERROR");
+    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+
+    if (!jsonMatch) {
+      throw new AppError("Claude returned invalid JSON. Please try again.", 502, "AI_JSON_ERROR");
+    }
+
+    try {
+      data = JSON.parse(jsonMatch[0]);
+    } catch (nestedError) {
+      throw new AppError("Claude returned invalid JSON. Please try again.", 502, "AI_JSON_ERROR");
+    }
   }
 
   const score = Math.max(0, Math.min(100, Number(data.score)));
@@ -204,7 +184,7 @@ const safeParseAnalysis = (rawText, includeRewrite) => {
     : [];
 
   if (!Number.isFinite(score) || !data.grade || !data.roast || issues.length < 3) {
-    throw new AppError("Gemini returned an incomplete analysis.", 502, "AI_SHAPE_ERROR");
+    throw new AppError("Claude returned an incomplete analysis.", 502, "AI_SHAPE_ERROR");
   }
 
   return {
@@ -221,15 +201,14 @@ const isTransientAiError = (error) => {
   return status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
 };
 
-const getModelAttempts = () => {
-  const attempts = [config.gemini.model, ...config.gemini.fallbackModels];
-  return [...new Set(attempts.filter(Boolean))];
-};
-
 const parseRetryDelaySeconds = (value) => {
   if (!value) return null;
 
   if (typeof value === "string") {
+    if (/^\d+$/.test(value)) {
+      return Math.max(1, Number(value));
+    }
+
     const secondMatch = value.match(/^(\d+(?:\.\d+)?)s$/i);
     if (secondMatch) {
       return Math.max(1, Math.ceil(Number(secondMatch[1])));
@@ -300,13 +279,17 @@ const formatWait = (seconds) => {
 
 const buildAiWaitError = (error) => {
   const status = error?.status || error?.code;
-  const retryAfterSeconds = findRetryAfterSeconds(error) || (status === 429 ? 60 : 30);
+  const retryHeader = error?.headers?.["retry-after"] || error?.headers?.get?.("retry-after");
+  const retryAfterSeconds =
+    parseRetryDelaySeconds(retryHeader) ||
+    findRetryAfterSeconds(error) ||
+    (status === 429 ? 60 : 30);
   const isRateLimited = status === 429;
   const waitMessage = formatWait(retryAfterSeconds);
   const appError = new AppError(
     isRateLimited
-      ? `Gemini is rate-limited. Please wait ${waitMessage} and try again.`
-      : `Gemini is busy right now. Please wait ${waitMessage} and try again.`,
+      ? `Claude is rate-limited. Please wait ${waitMessage} and try again.`
+      : `Claude is busy right now. Please wait ${waitMessage} and try again.`,
     isRateLimited ? 429 : 503,
     isRateLimited ? "AI_RATE_LIMITED" : "AI_TEMPORARILY_UNAVAILABLE"
   );
@@ -315,29 +298,37 @@ const buildAiWaitError = (error) => {
   return appError;
 };
 
-const generateWithModel = async ({ client, model, prompt, includeRewrite }) => {
-  const response = await client.models.generateContent({
-    model,
-    contents: prompt,
-    config: {
-      systemInstruction: SYSTEM_PROMPT,
-      temperature: 0.4,
-      maxOutputTokens: includeRewrite ? 5200 : 1400,
-      responseMimeType: "application/json",
-      responseSchema
-    }
+const extractClaudeText = (message) =>
+  (message.content || [])
+    .filter((block) => block.type === "text" && block.text)
+    .map((block) => block.text)
+    .join("\n")
+    .trim();
+
+const generateWithClaude = async ({ client, prompt, includeRewrite }) => {
+  const message = await client.messages.create({
+    model: config.anthropic.model,
+    max_tokens: includeRewrite ? config.anthropic.maxOutputTokens : 1200,
+    temperature: 0.3,
+    system: SYSTEM_PROMPT,
+    messages: [
+      {
+        role: "user",
+        content: prompt
+      }
+    ]
   });
 
-  const parsed = safeParseAnalysis(response.text || "", includeRewrite);
-  const usage = response.usageMetadata || {};
+  const parsed = safeParseAnalysis(extractClaudeText(message), includeRewrite);
+  const usage = message.usage || {};
 
   return {
     ...parsed,
-    provider: "gemini",
-    model,
+    provider: "anthropic",
+    model: config.anthropic.model,
     usage: {
-      inputTokens: usage.promptTokenCount || 0,
-      outputTokens: usage.candidatesTokenCount || 0
+      inputTokens: usage.input_tokens || 0,
+      outputTokens: usage.output_tokens || 0
     }
   };
 };
@@ -347,15 +338,15 @@ const analyzeResumeWithAi = async ({ resumeText, includeRewrite }) => {
     return demoAnalysis({ includeRewrite, resumeText });
   }
 
-  if (!config.gemini.apiKey) {
+  if (!config.anthropic.apiKey) {
     throw new AppError(
-      "Gemini is not configured. Add GEMINI_API_KEY on the server before running real analyses.",
+      "Claude is not configured. Add ANTHROPIC_API_KEY on the server before running real analyses.",
       503,
       "AI_NOT_CONFIGURED"
     );
   }
 
-  const client = getGeminiClient();
+  const client = getAnthropicClient();
   const prompt = `Analyze this resume text.
 
 Access rule:
@@ -363,36 +354,34 @@ Access rule:
 - If includeRewrite is false, set rewrite to null.
 - If includeRewrite is true, include a complete improved resume in rewrite.
 
+Return exactly one JSON object with this shape:
+{
+  "score": 0,
+  "grade": "B",
+  "roast": "one blunt but useful paragraph",
+  "issues": ["issue 1", "issue 2", "issue 3"],
+  "rewrite": "full improved resume text or null"
+}
+
 Rewrite format guide:
 ${REWRITE_FORMAT_GUIDE}
 
 Resume text:
 ${resumeText}`;
 
-  let lastError;
-
-  for (const model of getModelAttempts()) {
-    try {
-      return await generateWithModel({
-        client,
-        model,
-        prompt,
-        includeRewrite
-      });
-    } catch (error) {
-      lastError = error;
-
-      if (!isTransientAiError(error)) {
-        throw error;
-      }
+  try {
+    return await generateWithClaude({
+      client,
+      prompt,
+      includeRewrite
+    });
+  } catch (error) {
+    if (isTransientAiError(error)) {
+      throw buildAiWaitError(error);
     }
-  }
 
-  if (isTransientAiError(lastError)) {
-    throw buildAiWaitError(lastError);
+    throw error;
   }
-
-  throw lastError;
 };
 
 module.exports = {

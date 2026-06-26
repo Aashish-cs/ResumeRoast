@@ -53,7 +53,7 @@ const UploadPage = () => {
     event.preventDefault();
 
     if (retryAfterSeconds) {
-      setError(`Gemini asked us to wait. Try again in ${formatWait(retryAfterSeconds)}.`);
+      setError(`Claude asked us to wait. Try again in ${formatWait(retryAfterSeconds)}.`);
       return;
     }
 
@@ -95,7 +95,7 @@ const UploadPage = () => {
         <h1 className="text-4xl font-black tracking-normal">Upload your resume</h1>
         <p className="mt-3 max-w-2xl text-zinc-600">
           PDF only. The server extracts text, caps input length, and gates paid rewrite
-          generation before calling Gemini.
+          generation before calling Claude.
         </p>
       </div>
 
