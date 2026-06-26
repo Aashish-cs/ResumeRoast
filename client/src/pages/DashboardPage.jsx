@@ -74,7 +74,7 @@ const DashboardPage = () => {
             <div className="flex items-center justify-between gap-4">
               <span className="text-zinc-500">Free analysis</span>
               <span className="font-semibold">
-                {Math.min(freeUsed, 2)} of 2 used
+                {Math.min(freeUsed, 1)} of 1 used
               </span>
             </div>
             <div className="flex items-center justify-between gap-4">
