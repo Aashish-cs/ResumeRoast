@@ -1,4 +1,5 @@
-import { Route, Routes } from "react-router-dom";
+import { Route, Routes, useNavigate, useSearchParams } from "react-router-dom";
+import { useEffect } from "react";
 import Layout from "./components/Layout";
 import ProtectedRoute from "./components/ProtectedRoute";
 import DashboardPage from "./pages/DashboardPage";
@@ -14,8 +15,22 @@ import SignupPage from "./pages/SignupPage";
 import TermsPage from "./pages/TermsPage";
 import UploadPage from "./pages/UploadPage";
 
+const BillingPortalReturnHandler = () => {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  useEffect(() => {
+    if (searchParams.get("billing") === "portal-return") {
+      navigate("/dashboard", { replace: true });
+    }
+  }, [navigate, searchParams]);
+
+  return null;
+};
+
 const App = () => (
   <Layout>
+    <BillingPortalReturnHandler />
     <Routes>
       <Route path="/" element={<LandingPage />} />
       <Route path="/pricing" element={<PricingPage />} />

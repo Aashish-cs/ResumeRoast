@@ -7,7 +7,20 @@ const { getStripe, requireStripePrice } = require("../services/stripeService");
 
 const getStripeId = (value) => (typeof value === "string" ? value : value?.id);
 
-const getPortalReturnUrl = () => `${config.clientUrl}/dashboard`;
+const stripTrailingSlash = (url) => url.replace(/\/+$/, "");
+
+const getRequestClientUrl = (req) => {
+  const origin = req.get("origin");
+
+  if (origin && config.clientUrls.includes(origin)) {
+    return stripTrailingSlash(origin);
+  }
+
+  return stripTrailingSlash(config.clientUrl);
+};
+
+const getPortalReturnUrl = (req) =>
+  `${getRequestClientUrl(req)}/?billing=portal-return`;
 
 const getOrCreateCustomer = async (user) => {
   const stripe = getStripe();
@@ -30,11 +43,11 @@ const getOrCreateCustomer = async (user) => {
   return customer.id;
 };
 
-const createPortalSession = async (stripeCustomerId) => {
+const createPortalSession = async ({ req, stripeCustomerId }) => {
   const stripe = getStripe();
   return stripe.billingPortal.sessions.create({
     customer: stripeCustomerId,
-    return_url: getPortalReturnUrl()
+    return_url: getPortalReturnUrl(req)
   });
 };
 
@@ -89,7 +102,10 @@ const createCheckoutSession = asyncHandler(async (req, res) => {
       throw new AppError("This account is already Pro.", 409, "ALREADY_SUBSCRIBED");
     }
 
-    const session = await createPortalSession(req.user.stripeCustomerId);
+    const session = await createPortalSession({
+      req,
+      stripeCustomerId: req.user.stripeCustomerId
+    });
     return res.json({ url: session.url, type: "portal" });
   }
 
@@ -127,7 +143,10 @@ const createBillingPortalSession = asyncHandler(async (req, res) => {
     throw new AppError("No Stripe customer exists for this account yet.", 404, "NO_CUSTOMER");
   }
 
-  const session = await createPortalSession(req.user.stripeCustomerId);
+  const session = await createPortalSession({
+    req,
+    stripeCustomerId: req.user.stripeCustomerId
+  });
 
   res.json({ url: session.url });
 });
