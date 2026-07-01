@@ -9,7 +9,7 @@ const DEMO_CREDENTIALS = {
 };
 
 const LoginPage = () => {
-  const [form, setForm] = useState({ email: "", password: "" });
+  const [form, setForm] = useState(DEMO_CREDENTIALS);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const { login } = useAuth();
@@ -44,11 +44,6 @@ const LoginPage = () => {
     await submitCredentials(form);
   };
 
-  const loginWithDemo = async () => {
-    setForm(DEMO_CREDENTIALS);
-    await submitCredentials(DEMO_CREDENTIALS);
-  };
-
   return (
     <section className="mx-auto max-w-md px-4 py-12 sm:px-6">
       <div className="panel p-6">
@@ -60,36 +55,6 @@ const LoginPage = () => {
             <h1 className="text-2xl font-black">Log in</h1>
             <p className="text-sm text-zinc-500">Welcome back to ResumeRoast.</p>
           </div>
-        </div>
-
-        <div className="mb-5 rounded-lg border border-orange-200 bg-orange-50 p-4 text-sm">
-          <div className="font-black text-zinc-950">Recruiter demo login</div>
-          <div className="mt-3 grid gap-2 text-zinc-700">
-            <div className="flex items-center justify-between gap-3">
-              <span className="shrink-0 font-semibold">Username</span>
-              <span className="min-w-0 break-all text-right font-mono text-xs">
-                {DEMO_CREDENTIALS.email}
-              </span>
-            </div>
-            <div className="flex items-center justify-between gap-3">
-              <span className="shrink-0 font-semibold">Password</span>
-              <span className="min-w-0 break-all text-right font-mono text-xs">
-                {DEMO_CREDENTIALS.password}
-              </span>
-            </div>
-          </div>
-          <button
-            type="button"
-            className="button-secondary mt-4 w-full border-orange-200 bg-white"
-            onClick={loginWithDemo}
-            disabled={loading}
-          >
-            {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-            Log in with demo
-          </button>
-          <p className="mt-3 text-xs leading-5 text-zinc-500">
-            Shared portfolio account. Please do not upload private resumes.
-          </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
