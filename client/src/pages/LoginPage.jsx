@@ -3,6 +3,11 @@ import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
+const DEMO_CREDENTIALS = {
+  email: "demo@resumeroast.dev",
+  password: "DemoPass123!"
+};
+
 const LoginPage = () => {
   const [form, setForm] = useState({ email: "", password: "" });
   const [loading, setLoading] = useState(false);
@@ -20,19 +25,28 @@ const LoginPage = () => {
     }));
   };
 
-  const handleSubmit = async (event) => {
-    event.preventDefault();
+  const submitCredentials = async (credentials) => {
     setLoading(true);
     setError("");
 
     try {
-      await login(form);
+      await login(credentials);
       navigate(destination, { replace: true });
     } catch (requestError) {
       setError(requestError.message);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    await submitCredentials(form);
+  };
+
+  const loginWithDemo = async () => {
+    setForm(DEMO_CREDENTIALS);
+    await submitCredentials(DEMO_CREDENTIALS);
   };
 
   return (
@@ -46,6 +60,36 @@ const LoginPage = () => {
             <h1 className="text-2xl font-black">Log in</h1>
             <p className="text-sm text-zinc-500">Welcome back to ResumeRoast.</p>
           </div>
+        </div>
+
+        <div className="mb-5 rounded-lg border border-orange-200 bg-orange-50 p-4 text-sm">
+          <div className="font-black text-zinc-950">Recruiter demo login</div>
+          <div className="mt-3 grid gap-2 text-zinc-700">
+            <div className="flex items-center justify-between gap-3">
+              <span className="shrink-0 font-semibold">Username</span>
+              <span className="min-w-0 break-all text-right font-mono text-xs">
+                {DEMO_CREDENTIALS.email}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="shrink-0 font-semibold">Password</span>
+              <span className="min-w-0 break-all text-right font-mono text-xs">
+                {DEMO_CREDENTIALS.password}
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="button-secondary mt-4 w-full border-orange-200 bg-white"
+            onClick={loginWithDemo}
+            disabled={loading}
+          >
+            {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+            Log in with demo
+          </button>
+          <p className="mt-3 text-xs leading-5 text-zinc-500">
+            Shared portfolio account. Please do not upload private resumes.
+          </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">

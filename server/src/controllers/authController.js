@@ -4,8 +4,53 @@ const AppError = require("../utils/AppError");
 const asyncHandler = require("../utils/asyncHandler");
 const { signAuthToken } = require("../middleware/auth");
 
+const DEMO_ACCOUNT = {
+  name: "ResumeRoast Demo",
+  email: "demo@resumeroast.dev",
+  password: "DemoPass123!",
+  securityQuestion: "What app is this demo for?",
+  securityAnswer: "resumeroast"
+};
+
+const normalizeEmail = (email) => String(email || "").trim().toLowerCase();
+
 const normalizeSecurityAnswer = (answer) => {
   return String(answer || "").trim().toLowerCase();
+};
+
+const isDemoLogin = (email, password) =>
+  normalizeEmail(email) === DEMO_ACCOUNT.email && password === DEMO_ACCOUNT.password;
+
+const getOrCreateDemoUser = async () => {
+  const [passwordHash, securityAnswerHash] = await Promise.all([
+    bcrypt.hash(DEMO_ACCOUNT.password, 12),
+    bcrypt.hash(normalizeSecurityAnswer(DEMO_ACCOUNT.securityAnswer), 12)
+  ]);
+
+  return User.findOneAndUpdate(
+    { email: DEMO_ACCOUNT.email },
+    {
+      $set: {
+        name: DEMO_ACCOUNT.name,
+        passwordHash,
+        emailVerified: true,
+        securityQuestion: DEMO_ACCOUNT.securityQuestion,
+        securityAnswerHash,
+        hasUsedFreeAnalysis: false,
+        freeAnalysesUsed: 0,
+        subscriptionStatus: "inactive",
+        subscriptionCancelAtPeriodEnd: false
+      },
+      $unset: {
+        stripeCustomerId: "",
+        stripeSubscriptionId: "",
+        subscriptionCurrentPeriodEnd: "",
+        subscriptionCancelAt: "",
+        subscriptionCanceledAt: ""
+      }
+    },
+    { new: true, upsert: true, setDefaultsOnInsert: true }
+  );
 };
 
 const signup = asyncHandler(async (req, res) => {
@@ -27,7 +72,7 @@ const signup = asyncHandler(async (req, res) => {
     throw new AppError("Security answer must be at least 2 characters.", 400, "WEAK_ANSWER");
   }
 
-  const existingUser = await User.findOne({ email: email.toLowerCase().trim() });
+  const existingUser = await User.findOne({ email: normalizeEmail(email) });
   if (existingUser) {
     throw new AppError("That email is already registered.", 409, "DUPLICATE_EMAIL");
   }
@@ -57,7 +102,16 @@ const login = asyncHandler(async (req, res) => {
     throw new AppError("Email and password are required.", 400, "MISSING_FIELDS");
   }
 
-  const user = await User.findOne({ email: email.toLowerCase().trim() });
+  if (isDemoLogin(email, password)) {
+    const demoUser = await getOrCreateDemoUser();
+
+    return res.json({
+      token: signAuthToken(demoUser),
+      user: demoUser.toSafeJSON()
+    });
+  }
+
+  const user = await User.findOne({ email: normalizeEmail(email) });
   const passwordMatches = user ? await bcrypt.compare(password, user.passwordHash) : false;
 
   if (!user || !passwordMatches) {
@@ -81,7 +135,7 @@ const forgotPassword = asyncHandler(async (req, res) => {
     throw new AppError("Email is required.", 400, "EMAIL_REQUIRED");
   }
 
-  const user = await User.findOne({ email: email.toLowerCase().trim() });
+  const user = await User.findOne({ email: normalizeEmail(email) });
 
   if (!user || !user.securityQuestion) {
     return res.json({
@@ -111,7 +165,7 @@ const resetPassword = asyncHandler(async (req, res) => {
     throw new AppError("Password must be at least 8 characters.", 400, "WEAK_PASSWORD");
   }
 
-  const user = await User.findOne({ email: email.toLowerCase().trim() });
+  const user = await User.findOne({ email: normalizeEmail(email) });
 
   if (!user || !user.securityAnswerHash) {
     throw new AppError("Security answer is incorrect.", 400, "INVALID_SECURITY_ANSWER");
