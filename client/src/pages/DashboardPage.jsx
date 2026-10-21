@@ -187,10 +187,10 @@ const DashboardPage = () => {
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="rounded-md bg-zinc-100 px-3 py-1 text-sm font-black">
-                      {analysis.grade}
+                      {analysis.status && analysis.status !== "completed" ? analysis.status : analysis.grade}
                     </span>
                     <span className="text-sm font-semibold text-zinc-600">
-                      {analysis.score}/100
+                      {analysis.score == null ? "Pending" : `${analysis.score}/100`}
                     </span>
                   </div>
                 </Link>

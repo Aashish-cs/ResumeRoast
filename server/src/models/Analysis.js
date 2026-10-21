@@ -6,47 +6,58 @@ const analysisSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
-      index: true
+      index: true,
     },
+    status: {
+      type: String,
+      enum: ["queued", "processing", "completed", "failed"],
+      default: "completed",
+      index: true,
+    },
+    attempts: { type: Number, default: 0 },
+    leaseToken: String,
+    leaseUntil: Date,
+    error: String,
+    quotaKey: String,
     originalFileName: {
       type: String,
-      required: true
+      required: true,
     },
     resumeS3Key: String,
     resumeTextHash: {
       type: String,
-      required: true
+      required: false,
     },
     score: {
       type: Number,
       min: 0,
       max: 100,
-      required: true
+      required: false,
     },
     grade: {
       type: String,
-      required: true
+      required: false,
     },
     roast: {
       type: String,
-      required: true
+      required: false,
     },
     issues: {
       type: [String],
-      default: []
+      default: [],
     },
     rewrite: String,
     rewriteUnlocked: {
       type: Boolean,
-      default: false
+      default: false,
     },
     model: String,
     tokenUsage: {
       inputTokens: Number,
-      outputTokens: Number
-    }
+      outputTokens: Number,
+    },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 module.exports = mongoose.model("Analysis", analysisSchema);

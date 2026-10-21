@@ -2,56 +2,16 @@ const bcrypt = require("bcryptjs");
 const User = require("../models/User");
 const AppError = require("../utils/AppError");
 const asyncHandler = require("../utils/asyncHandler");
-const { signAuthToken } = require("../middleware/auth");
+const { setSession } = require("../middleware/auth");
 
-const DEMO_ACCOUNT = {
-  name: "ResumeRoast Demo",
-  email: "demo@resumeroast.dev",
-  password: "DemoPass123!",
-  securityQuestion: "What app is this demo for?",
-  securityAnswer: "resumeroast"
-};
-
-const normalizeEmail = (email) => String(email || "").trim().toLowerCase();
-
-const normalizeSecurityAnswer = (answer) => {
-  return String(answer || "").trim().toLowerCase();
-};
-
-const isDemoLogin = (email, password) =>
-  normalizeEmail(email) === DEMO_ACCOUNT.email && password === DEMO_ACCOUNT.password;
-
-const getOrCreateDemoUser = async () => {
-  const [passwordHash, securityAnswerHash] = await Promise.all([
-    bcrypt.hash(DEMO_ACCOUNT.password, 12),
-    bcrypt.hash(normalizeSecurityAnswer(DEMO_ACCOUNT.securityAnswer), 12)
-  ]);
-
-  return User.findOneAndUpdate(
-    { email: DEMO_ACCOUNT.email },
-    {
-      $set: {
-        name: DEMO_ACCOUNT.name,
-        passwordHash,
-        emailVerified: true,
-        securityQuestion: DEMO_ACCOUNT.securityQuestion,
-        securityAnswerHash,
-        hasUsedFreeAnalysis: false,
-        freeAnalysesUsed: 0,
-        subscriptionStatus: "inactive",
-        subscriptionCancelAtPeriodEnd: false
-      },
-      $unset: {
-        stripeCustomerId: "",
-        stripeSubscriptionId: "",
-        subscriptionCurrentPeriodEnd: "",
-        subscriptionCancelAt: "",
-        subscriptionCanceledAt: ""
-      }
-    },
-    { new: true, upsert: true, setDefaultsOnInsert: true }
-  );
-};
+const normalizeEmail = (email) =>
+  String(email || "")
+    .trim()
+    .toLowerCase();
+const normalizeSecurityAnswer = (answer) =>
+  String(answer || "")
+    .trim()
+    .toLowerCase();
 
 const signup = asyncHandler(async (req, res) => {
   const { name, email, password, securityQuestion, securityAnswer } = req.body;
@@ -60,38 +20,53 @@ const signup = asyncHandler(async (req, res) => {
     throw new AppError(
       "Name, email, password, security question, and security answer are required.",
       400,
-      "MISSING_FIELDS"
+      "MISSING_FIELDS",
     );
   }
 
   if (password.length < 8) {
-    throw new AppError("Password must be at least 8 characters.", 400, "WEAK_PASSWORD");
+    throw new AppError(
+      "Password must be at least 8 characters.",
+      400,
+      "WEAK_PASSWORD",
+    );
   }
 
   if (normalizeSecurityAnswer(securityAnswer).length < 2) {
-    throw new AppError("Security answer must be at least 2 characters.", 400, "WEAK_ANSWER");
+    throw new AppError(
+      "Security answer must be at least 2 characters.",
+      400,
+      "WEAK_ANSWER",
+    );
   }
 
   const existingUser = await User.findOne({ email: normalizeEmail(email) });
   if (existingUser) {
-    throw new AppError("That email is already registered.", 409, "DUPLICATE_EMAIL");
+    throw new AppError(
+      "That email is already registered.",
+      409,
+      "DUPLICATE_EMAIL",
+    );
   }
 
   const passwordHash = await bcrypt.hash(password, 12);
-  const securityAnswerHash = await bcrypt.hash(normalizeSecurityAnswer(securityAnswer), 12);
+  const securityAnswerHash = await bcrypt.hash(
+    normalizeSecurityAnswer(securityAnswer),
+    12,
+  );
   const user = await User.create({
     name,
     email,
     passwordHash,
     emailVerified: true,
     securityQuestion,
-    securityAnswerHash
+    securityAnswerHash,
   });
 
+  setSession(res, user);
   res.status(201).json({
     message: "Account created. You can log in now.",
-    token: signAuthToken(user),
-    user: user.toSafeJSON()
+    user: user.toSafeJSON(),
   });
 });
 
@@ -99,33 +74,37 @@ const login = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
 
   if (!email || !password) {
-    throw new AppError("Email and password are required.", 400, "MISSING_FIELDS");
-  }
-
-  if (isDemoLogin(email, password)) {
-    const demoUser = await getOrCreateDemoUser();
-
-    return res.json({
-      token: signAuthToken(demoUser),
-      user: demoUser.toSafeJSON()
-    });
+    throw new AppError(
+      "Email and password are required.",
+      400,
+      "MISSING_FIELDS",
+    );
   }
 
   const user = await User.findOne({ email: normalizeEmail(email) });
-  const passwordMatches = user ? await bcrypt.compare(password, user.passwordHash) : false;
+  const passwordMatches = user
+    ? await bcrypt.compare(password, user.passwordHash)
+    : false;
 
   if (!user || !passwordMatches) {
-    throw new AppError("Invalid email or password.", 401, "INVALID_CREDENTIALS");
+    throw new AppError(
+      "Invalid email or password.",
+      401,
+      "INVALID_CREDENTIALS",
+    );
   }
 
+  setSession(res, user);
   res.json({
-    token: signAuthToken(user),
-    user: user.toSafeJSON()
+    user: user.toSafeJSON(),
   });
 });
 
 const me = asyncHandler(async (req, res) => {
-  res.json({ user: req.user.toSafeJSON() });
+  const user = req.user.toSafeJSON();
+  user.freeAnalysesUsed = await require("../models/Analysis").countDocuments({user: req.user._id, status: {$ne: "failed"}});
+  user.hasUsedFreeAnalysis = user.freeAnalysesUsed > 0;
+  res.json({user});
 });
 
 const forgotPassword = asyncHandler(async (req, res) => {
@@ -139,14 +118,14 @@ const forgotPassword = asyncHandler(async (req, res) => {
 
   if (!user || !user.securityQuestion) {
     return res.json({
-      message: "If that account exists, its security question will appear."
+      message: "If that account exists, its security question will appear.",
     });
   }
 
   res.json({
     message: "Answer your security question to reset your password.",
     email: user.email,
-    securityQuestion: user.securityQuestion
+    securityQuestion: user.securityQuestion,
   });
 });
 
@@ -157,34 +136,47 @@ const resetPassword = asyncHandler(async (req, res) => {
     throw new AppError(
       "Email, security answer, and new password are required.",
       400,
-      "MISSING_FIELDS"
+      "MISSING_FIELDS",
     );
   }
 
   if (password.length < 8) {
-    throw new AppError("Password must be at least 8 characters.", 400, "WEAK_PASSWORD");
+    throw new AppError(
+      "Password must be at least 8 characters.",
+      400,
+      "WEAK_PASSWORD",
+    );
   }
 
   const user = await User.findOne({ email: normalizeEmail(email) });
 
   if (!user || !user.securityAnswerHash) {
-    throw new AppError("Security answer is incorrect.", 400, "INVALID_SECURITY_ANSWER");
+    throw new AppError(
+      "Security answer is incorrect.",
+      400,
+      "INVALID_SECURITY_ANSWER",
+    );
   }
 
   const answerMatches = await bcrypt.compare(
     normalizeSecurityAnswer(securityAnswer),
-    user.securityAnswerHash
+    user.securityAnswerHash,
   );
 
   if (!answerMatches) {
-    throw new AppError("Security answer is incorrect.", 400, "INVALID_SECURITY_ANSWER");
+    throw new AppError(
+      "Security answer is incorrect.",
+      400,
+      "INVALID_SECURITY_ANSWER",
+    );
   }
 
   user.passwordHash = await bcrypt.hash(password, 12);
+  user.sessionVersion = (user.sessionVersion || 0) + 1;
   await user.save();
 
   res.json({
-    message: "Password reset. You can log in now."
+    message: "Password reset. You can log in now.",
   });
 });
 
@@ -193,5 +185,5 @@ module.exports = {
   login,
   me,
   forgotPassword,
-  resetPassword
+  resetPassword,
 };

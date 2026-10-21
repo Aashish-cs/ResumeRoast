@@ -42,13 +42,15 @@ const config = {
   anthropic: {
     apiKey: process.env.ANTHROPIC_API_KEY || "",
     model: process.env.ANTHROPIC_MODEL || "claude-haiku-4-5-20251001",
-    maxOutputTokens: numberFromEnv("ANTHROPIC_MAX_OUTPUT_TOKENS", 3200)
+    maxOutputTokens: numberFromEnv("ANTHROPIC_MAX_OUTPUT_TOKENS", 3200),
   },
   aws: {
     region: process.env.AWS_REGION || "us-east-1",
     accessKeyId: process.env.AWS_ACCESS_KEY_ID || "",
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || "",
-    bucket: process.env.AWS_S3_BUCKET || ""
+    bucket: process.env.AWS_S3_BUCKET || "",
+    endpoint: process.env.AWS_S3_ENDPOINT || undefined,
+    sessionToken: process.env.AWS_SESSION_TOKEN || undefined,
   },
   stripe: {
     secretKey: process.env.STRIPE_SECRET_KEY || "",
@@ -59,20 +61,33 @@ const config = {
       `${clientUrls[0]}/dashboard?checkout=success`,
     cancelUrl:
       process.env.STRIPE_CANCEL_URL ||
-      `${clientUrls[0]}/pricing?checkout=cancelled`
+      `${clientUrls[0]}/pricing?checkout=cancelled`,
   },
   sendgrid: {
     apiKey: process.env.SENDGRID_API_KEY || "",
-    fromEmail: process.env.FROM_EMAIL || "no-reply@resumeroast.local"
-  }
+    fromEmail: process.env.FROM_EMAIL || "no-reply@resumeroast.local",
+  },
 };
 
 if (config.env === "production") {
-  const required = ["MONGODB_URI", "JWT_SECRET", "CLIENT_URL", "ANTHROPIC_API_KEY"];
+  const required = [
+    "MONGODB_URI",
+    "JWT_SECRET",
+    "CLIENT_URL",
+    "ANTHROPIC_API_KEY",
+    "AWS_S3_BUCKET",
+  ];
   const missing = required.filter((key) => !process.env[key]);
 
+  if (process.env.JWT_SECRET && process.env.JWT_SECRET.length < 32)
+    throw new Error(
+      "JWT_SECRET must contain at least 32 characters in production.",
+    );
+
   if (missing.length) {
-    throw new Error(`Missing required production env vars: ${missing.join(", ")}`);
+    throw new Error(
+      `Missing required production env vars: ${missing.join(", ")}`,
+    );
   }
 }
 

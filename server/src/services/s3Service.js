@@ -1,51 +1,60 @@
-const { PutObjectCommand, S3Client } = require("@aws-sdk/client-s3");
+const { randomUUID } = require("crypto");
+const {
+  PutObjectCommand,
+  GetObjectCommand,
+  DeleteObjectCommand,
+  S3Client,
+} = require("@aws-sdk/client-s3");
 const config = require("../config/env");
-
-const isS3Configured = () =>
-  Boolean(
-    config.aws.accessKeyId &&
-      config.aws.secretAccessKey &&
-      config.aws.bucket &&
-      config.aws.region
-  );
-
-let s3Client;
-const getS3Client = () => {
-  if (!s3Client) {
-    s3Client = new S3Client({
-      region: config.aws.region,
-      credentials: {
-        accessKeyId: config.aws.accessKeyId,
-        secretAccessKey: config.aws.secretAccessKey
-      }
-    });
-  }
-
-  return s3Client;
-};
-
+const AppError = require("../utils/AppError");
+let client;
+function getClient() {
+  if (!config.aws.bucket)
+    throw new AppError(
+      "Resume storage is not configured.",
+      503,
+      "STORAGE_UNAVAILABLE",
+    );
+  return (client ||= new S3Client({
+    region: config.aws.region,
+    ...(config.aws.endpoint ? {endpoint: config.aws.endpoint, forcePathStyle: true} : {}),
+    ...(config.aws.accessKeyId
+      ? {
+          credentials: {
+            accessKeyId: config.aws.accessKeyId,
+            secretAccessKey: config.aws.secretAccessKey,
+            sessionToken: config.aws.sessionToken,
+          },
+        }
+      : {}),
+  }));
+}
 const uploadResumeToS3 = async ({ userId, file }) => {
-  if (!isS3Configured()) {
-    console.log("[s3 skipped] AWS credentials or bucket are not configured.");
-    return null;
-  }
-
-  const safeName = file.originalname.replace(/[^a-z0-9._-]/gi, "_");
-  const key = `resumes/${userId}/${Date.now()}-${safeName}`;
-
-  await getS3Client().send(
+  const key = `resumes/${userId}/${randomUUID()}.pdf`;
+  await getClient().send(
     new PutObjectCommand({
       Bucket: config.aws.bucket,
       Key: key,
       Body: file.buffer,
-      ContentType: file.mimetype,
-      ServerSideEncryption: "AES256"
-    })
+      ContentType: "application/pdf",
+      ServerSideEncryption: "AES256",
+    }),
+    { abortSignal: AbortSignal.timeout(15000) },
   );
-
   return key;
 };
-
-module.exports = {
-  uploadResumeToS3
+const readResume = async (key) => {
+  const result = await getClient().send(
+    new GetObjectCommand({ Bucket: config.aws.bucket, Key: key }),
+    { abortSignal: AbortSignal.timeout(15000) },
+  );
+  if (result.ContentLength > config.resumeMaxBytes)
+    throw new Error("Stored PDF exceeds size limit");
+  return Buffer.from(await result.Body.transformToByteArray());
 };
+const deleteResume = (key) =>
+  getClient().send(
+    new DeleteObjectCommand({ Bucket: config.aws.bucket, Key: key }),
+    { abortSignal: AbortSignal.timeout(15000) },
+  );
+module.exports = { uploadResumeToS3, readResume, deleteResume };

@@ -4,7 +4,7 @@ const {
   listAnalyses,
   getAnalysis,
   downloadRewritePdf,
-  downloadRewriteDocx
+  downloadRewriteDocx,
 } = require("../controllers/analysisController");
 const { requireAuth } = require("../middleware/auth");
 const upload = require("../middleware/upload");
@@ -13,9 +13,22 @@ const router = express.Router();
 
 router.use(requireAuth);
 router.get("/", listAnalyses);
-router.post("/", upload.single("resume"), analyzeResume);
+router.post(
+  "/",
+  require("../middleware/accountLimit")("uploads", 5),
+  upload.single("resume"),
+  analyzeResume,
+);
 router.get("/:id", getAnalysis);
-router.get("/:id/download/pdf", downloadRewritePdf);
-router.get("/:id/download/docx", downloadRewriteDocx);
+router.get(
+  "/:id/download/pdf",
+  require("../middleware/accountLimit")("downloads", 20),
+  downloadRewritePdf,
+);
+router.get(
+  "/:id/download/docx",
+  require("../middleware/accountLimit")("downloads", 20),
+  downloadRewriteDocx,
+);
 
 module.exports = router;

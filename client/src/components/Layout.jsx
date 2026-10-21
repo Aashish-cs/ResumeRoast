@@ -15,17 +15,29 @@ const Layout = ({ children }) => {
   const [mobileOpen, setMobileOpen] = useState(false);
   const navigate = useNavigate();
 
-  const handleLogout = () => {
-    logout();
-    navigate("/");
+  const handleLogout = async () => {
+    try {
+      await logout();
+      navigate("/");
+    } catch (_) {
+      window.alert("Could not sign out. Please try again.");
+    }
   };
 
   const nav = (
     <>
-      <NavLink to="/upload" className={navClass} onClick={() => setMobileOpen(false)}>
+      <NavLink
+        to="/upload"
+        className={navClass}
+        onClick={() => setMobileOpen(false)}
+      >
         Upload
       </NavLink>
-      <NavLink to="/pricing" className={navClass} onClick={() => setMobileOpen(false)}>
+      <NavLink
+        to="/pricing"
+        className={navClass}
+        onClick={() => setMobileOpen(false)}
+      >
         Pricing
       </NavLink>
       {user && (
@@ -44,7 +56,10 @@ const Layout = ({ children }) => {
     <div className="flex min-h-screen flex-col bg-[#fafafa] text-zinc-950">
       <header className="sticky top-0 z-30 border-b border-zinc-200 bg-white/90 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
-          <Link to="/" className="flex items-center gap-2 font-black tracking-tight">
+          <Link
+            to="/"
+            className="flex items-center gap-2 font-black tracking-tight"
+          >
             <span className="flex h-9 w-9 items-center justify-center rounded-md bg-orange-600 text-white">
               <Flame className="h-5 w-5" />
             </span>
@@ -83,7 +98,11 @@ const Layout = ({ children }) => {
             onClick={() => setMobileOpen((value) => !value)}
             aria-label="Toggle menu"
           >
-            {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            {mobileOpen ? (
+              <X className="h-5 w-5" />
+            ) : (
+              <Menu className="h-5 w-5" />
+            )}
           </button>
         </div>
 
@@ -92,7 +111,10 @@ const Layout = ({ children }) => {
             <div className="flex flex-col gap-2">
               {nav}
               {user ? (
-                <button className="button-secondary justify-start" onClick={handleLogout}>
+                <button
+                  className="button-secondary justify-start"
+                  onClick={handleLogout}
+                >
                   <LogOut className="h-4 w-4" />
                   Logout
                 </button>

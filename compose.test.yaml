@@ -1,0 +1,70 @@
+# Disposable integration stack. No cloud credentials are read from .env.
+x-runtime: &runtime
+  NODE_ENV: test
+  PORT: 5001
+  MONGODB_URI: mongodb://mongo:27017/resumeroast_e2e?replicaSet=rs0
+  JWT_SECRET: local-container-test-secret-not-for-production
+  CLIENT_URL: http://localhost:5174
+  AWS_S3_BUCKET: resumeroast-test
+  AWS_REGION: us-east-1
+  AWS_ACCESS_KEY_ID: test
+  AWS_SECRET_ACCESS_KEY: test
+  AWS_S3_ENDPOINT: http://s3:4566
+  USE_DEMO_AI: 'true'
+services:
+  mongo:
+    image: mongo:8
+    command: [mongod, --replSet, rs0, --bind_ip_all]
+    healthcheck:
+      test: [CMD, mongosh, --quiet, --eval, 'db.adminCommand("ping").ok']
+      interval: 3s
+      timeout: 5s
+      retries: 30
+  mongo-init:
+    image: mongo:8
+    depends_on:
+      mongo: {condition: service_healthy}
+    entrypoint: [mongosh, --host, 'mongo:27017', --eval, 'try { rs.status() } catch(e) { rs.initiate({_id:"rs0",members:[{_id:0,host:"mongo:27017"}]}) }; while (!db.hello().isWritablePrimary) {sleep(500)}']
+  s3:
+    image: localstack/localstack:4.14.0
+    environment:
+      SERVICES: s3
+      AWS_DEFAULT_REGION: us-east-1
+    healthcheck:
+      test: [CMD, awslocal, s3api, list-buckets]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+  s3-init:
+    image: localstack/localstack:4.14.0
+    depends_on:
+      s3: {condition: service_healthy}
+    environment:
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_DEFAULT_REGION: us-east-1
+    entrypoint: [sh, -c, 'aws --endpoint-url=http://s3:4566 s3api head-bucket --bucket resumeroast-test 2>/dev/null || aws --endpoint-url=http://s3:4566 s3api create-bucket --bucket resumeroast-test']
+  api:
+    build: .
+    environment: *runtime
+    depends_on:
+      mongo-init: {condition: service_completed_successfully}
+      s3-init: {condition: service_completed_successfully}
+    healthcheck:
+      test: [CMD, node, -e, 'fetch("http://localhost:5001/api/health").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))']
+      interval: 3s
+      timeout: 5s
+      retries: 30
+  worker:
+    build: .
+    command: [node, server/src/worker.js]
+    environment: *runtime
+    depends_on:
+      api: {condition: service_healthy}
+  client:
+    build:
+      context: .
+      dockerfile: client/Dockerfile
+    ports: ['127.0.0.1:5174:80']
+    depends_on:
+      api: {condition: service_healthy}

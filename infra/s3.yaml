@@ -1,0 +1,72 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: ResumeRoast private PDF storage and least-privilege runtime policies
+Parameters:
+  BucketName:
+    Type: String
+    AllowedPattern: '[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]'
+  RetentionDays:
+    Type: Number
+    Default: 7
+    MinValue: 1
+Resources:
+  ResumeBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Ref BucketName
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules: [{ObjectOwnership: BucketOwnerEnforced}]
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteRawResumes
+            Status: Enabled
+            Prefix: resumes/
+            ExpirationInDays: !Ref RetentionDays
+            AbortIncompleteMultipartUpload: {DaysAfterInitiation: 1}
+      Tags: [{Key: Application, Value: ResumeRoast}]
+  BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ResumeBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource: [!GetAtt ResumeBucket.Arn, !Sub '${ResumeBucket.Arn}/*']
+            Condition: {Bool: {'aws:SecureTransport': 'false'}}
+  ApiStoragePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: Upload and remove ResumeRoast PDFs only
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: [s3:PutObject, s3:DeleteObject]
+            Resource: !Sub '${ResumeBucket.Arn}/resumes/*'
+  WorkerStoragePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: Read ResumeRoast PDFs only
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: s3:GetObject
+            Resource: !Sub '${ResumeBucket.Arn}/resumes/*'
+Outputs:
+  Bucket: {Value: !Ref ResumeBucket}
+  Region: {Value: !Ref 'AWS::Region'}
+  ApiPolicyArn: {Value: !Ref ApiStoragePolicy}
+  WorkerPolicyArn: {Value: !Ref WorkerStoragePolicy}

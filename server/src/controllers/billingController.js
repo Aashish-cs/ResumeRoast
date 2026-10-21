@@ -1,251 +1,207 @@
+const { randomUUID } = require("crypto");
 const config = require("../config/env");
 const User = require("../models/User");
+const BillingEvent = require("../models/BillingEvent");
 const AppError = require("../utils/AppError");
 const asyncHandler = require("../utils/asyncHandler");
-const { sendReceiptEmail } = require("../services/emailService");
+const withBillingLock = require("../services/billingLock");
 const { getStripe, requireStripePrice } = require("../services/stripeService");
-
-const getStripeId = (value) => (typeof value === "string" ? value : value?.id);
-
-const stripTrailingSlash = (url) => url.replace(/\/+$/, "");
-
-const getRequestClientUrl = (req) => {
-  const origin = req.get("origin");
-
-  if (origin && config.clientUrls.includes(origin)) {
-    return stripTrailingSlash(origin);
-  }
-
-  return stripTrailingSlash(config.clientUrl);
-};
-
-const getPortalReturnUrl = (req) =>
-  `${getRequestClientUrl(req)}/?billing=portal-return`;
-
-const getOrCreateCustomer = async (user) => {
-  const stripe = getStripe();
-
-  if (user.stripeCustomerId) {
-    return user.stripeCustomerId;
-  }
-
-  const customer = await stripe.customers.create({
-    email: user.email,
-    name: user.name,
-    metadata: {
-      userId: user._id.toString()
-    }
-  });
-
-  user.stripeCustomerId = customer.id;
-  await user.save();
-
-  return customer.id;
-};
-
-const createPortalSession = async ({ req, stripeCustomerId }) => {
-  const stripe = getStripe();
-  return stripe.billingPortal.sessions.create({
-    customer: stripeCustomerId,
-    return_url: getPortalReturnUrl(req)
-  });
-};
-
-const getSubscriptionPeriodEnd = (subscription) => {
-  const configuredItem = subscription.items?.data?.find(
-    (item) => item.price?.id === config.stripe.priceId
+const id = (value) => (typeof value === "string" ? value : value?.id);
+const date = (value) => (value ? new Date(value * 1000) : null);
+const validSubscription = (sub) =>
+  sub.items?.data?.some(
+    (item) => item.price?.id === config.stripe.priceId && item.quantity === 1,
   );
-  const firstItem = subscription.items?.data?.[0];
-
-  return (
-    subscription.current_period_end ||
-    configuredItem?.current_period_end ||
-    firstItem?.current_period_end ||
-    subscription.ended_at ||
-    subscription.cancel_at ||
-    null
-  );
-};
-
-const dateFromStripeTimestamp = (timestamp) =>
-  timestamp ? new Date(timestamp * 1000) : null;
-
-const subscriptionIncludesConfiguredPrice = (subscription) => {
-  if (!config.stripe.priceId) return true;
-
-  return Boolean(
-    subscription.items?.data?.some((item) => item.price?.id === config.stripe.priceId)
-  );
-};
-
-const findUserForSubscription = async (subscription) => {
-  const customerId = getStripeId(subscription.customer);
-  const metadataUserId = subscription.metadata?.userId;
-
-  if (customerId) {
-    const user = await User.findOne({ stripeCustomerId: customerId });
-    if (user) return user;
+async function currentSubscription(stripe, customer) {
+  const subscriptions = [];
+  for await (const sub of stripe.subscriptions.list({
+    customer,
+    status: "all",
+    limit: 100,
+  })) {
+    if (validSubscription(sub)) subscriptions.push(sub);
   }
-
-  if (metadataUserId) {
-    return User.findById(metadataUserId);
-  }
-
-  return null;
-};
-
+  return subscriptions.sort(
+    (a, b) =>
+      Number(["active", "trialing"].includes(b.status)) -
+        Number(["active", "trialing"].includes(a.status)) ||
+      b.created - a.created,
+  )[0];
+}
 const createCheckoutSession = asyncHandler(async (req, res) => {
   requireStripePrice();
-
-  if (req.user.isPaidSubscriber()) {
-    if (!req.user.stripeCustomerId) {
-      throw new AppError("This account is already Pro.", 409, "ALREADY_SUBSCRIBED");
-    }
-
-    const session = await createPortalSession({
-      req,
-      stripeCustomerId: req.user.stripeCustomerId
-    });
-    return res.json({ url: session.url, type: "portal" });
-  }
-
   const stripe = getStripe();
-  const customerId = await getOrCreateCustomer(req.user);
-
-  const session = await stripe.checkout.sessions.create({
-    mode: "subscription",
-    customer: customerId,
-    client_reference_id: req.user._id.toString(),
-    line_items: [
-      {
-        price: config.stripe.priceId,
-        quantity: 1
-      }
-    ],
-    allow_promotion_codes: true,
-    success_url: config.stripe.successUrl,
-    cancel_url: config.stripe.cancelUrl,
-    metadata: {
-      userId: req.user._id.toString()
-    },
-    subscription_data: {
-      metadata: {
-        userId: req.user._id.toString()
-      }
+  const result = await withBillingLock(req.user._id, async (user, save) => {
+    let customer = user.stripeCustomerId;
+    if (!customer) {
+      customer = (
+        await stripe.customers.create(
+          { email: user.email, name: user.name, metadata: { userId: user.id } },
+          { idempotencyKey: `customer:${user.id}` },
+        )
+      ).id;
+      await save({ $set: { stripeCustomerId: customer } });
     }
+    const existing = await currentSubscription(stripe, customer);
+    if (
+      existing &&
+      ["active", "trialing", "past_due", "unpaid"].includes(existing.status)
+    ) {
+      const portal = await stripe.billingPortal.sessions.create({
+        customer,
+        return_url: config.clientUrl + "/dashboard",
+      });
+      return { url: portal.url, type: "portal" };
+    }
+    if (user.checkoutSessionId) {
+      const session = await stripe.checkout.sessions.retrieve(
+        user.checkoutSessionId,
+      );
+      if (session.status === "open") return { url: session.url };
+      if (session.status === "complete" && session.payment_status === "unpaid")
+        throw new AppError(
+          "Your payment is still pending.",
+          409,
+          "PAYMENT_PENDING",
+        );
+    }
+    let attempt = user.checkoutAttempt;
+    if (!attempt || user.checkoutSessionId) {
+      attempt = randomUUID();
+      await save({
+        $set: { checkoutAttempt: attempt },
+        $unset: { checkoutSessionId: 1 },
+      });
+    }
+    const session = await stripe.checkout.sessions.create(
+      {
+        mode: "subscription",
+        customer,
+        client_reference_id: user.id,
+        line_items: [{ price: config.stripe.priceId, quantity: 1 }],
+        success_url: config.stripe.successUrl,
+        cancel_url: config.stripe.cancelUrl,
+        metadata: { userId: user.id },
+        subscription_data: { metadata: { userId: user.id } },
+      },
+      { idempotencyKey: `checkout:${user.id}:${attempt}` },
+    );
+    await save({ $set: { checkoutSessionId: session.id } });
+    return { url: session.url };
   });
-
-  res.json({ url: session.url });
+  res.json(result);
 });
-
 const createBillingPortalSession = asyncHandler(async (req, res) => {
-  if (!req.user.stripeCustomerId) {
-    throw new AppError("No Stripe customer exists for this account yet.", 404, "NO_CUSTOMER");
-  }
-
-  const session = await createPortalSession({
-    req,
-    stripeCustomerId: req.user.stripeCustomerId
+  if (!req.user.stripeCustomerId)
+    throw new AppError("No billing account yet.", 404, "NO_CUSTOMER");
+  const session = await getStripe().billingPortal.sessions.create({
+    customer: req.user.stripeCustomerId,
+    return_url: config.clientUrl + "/dashboard",
   });
-
   res.json({ url: session.url });
 });
-
-const syncSubscription = async (subscription) => {
-  const user = await findUserForSubscription(subscription);
-  const customerId = getStripeId(subscription.customer);
-  const subscriptionId = getStripeId(subscription);
-
-  if (!user || !customerId) return null;
-
-  const periodEnd = getSubscriptionPeriodEnd(subscription);
-  const subscriptionStatus = subscriptionIncludesConfiguredPrice(subscription)
-    ? subscription.status || "inactive"
-    : "inactive";
-
-  user.stripeCustomerId = customerId;
-  user.stripeSubscriptionId = subscriptionId || user.stripeSubscriptionId;
-  user.subscriptionStatus = subscriptionStatus;
-  user.subscriptionCurrentPeriodEnd = dateFromStripeTimestamp(periodEnd);
-  user.subscriptionCancelAtPeriodEnd = Boolean(subscription.cancel_at_period_end);
-  user.subscriptionCancelAt = dateFromStripeTimestamp(
-    subscription.cancel_at || (subscription.cancel_at_period_end ? periodEnd : null)
-  );
-  user.subscriptionCanceledAt = dateFromStripeTimestamp(subscription.canceled_at);
-
-  await user.save();
-  return user;
-};
-
+const supported = new Set([
+  "checkout.session.completed",
+  "checkout.session.async_payment_succeeded",
+  "checkout.session.async_payment_failed",
+  "customer.subscription.created",
+  "customer.subscription.updated",
+  "customer.subscription.deleted",
+  "invoice.payment_succeeded",
+  "invoice.payment_failed",
+]);
 const handleStripeWebhook = asyncHandler(async (req, res) => {
   const stripe = getStripe();
-  const signature = req.headers["stripe-signature"];
-  let event;
-
-  if (config.env === "production" && !config.stripe.webhookSecret) {
+  if (!config.stripe.webhookSecret)
     throw new AppError(
-      "STRIPE_WEBHOOK_SECRET is required for production billing webhooks.",
+      "Webhook signing secret required.",
       503,
-      "STRIPE_WEBHOOK_SECRET_MISSING"
+      "WEBHOOK_NOT_CONFIGURED",
     );
-  }
-
+  let event;
   try {
-    event = config.stripe.webhookSecret
-      ? stripe.webhooks.constructEvent(req.body, signature, config.stripe.webhookSecret)
-      : JSON.parse(req.body.toString());
-  } catch (error) {
-    throw new AppError(`Webhook signature failed: ${error.message}`, 400, "WEBHOOK_ERROR");
+    event = stripe.webhooks.constructEvent(
+      req.body,
+      req.headers["stripe-signature"],
+      config.stripe.webhookSecret,
+    );
+  } catch (_) {
+    throw new AppError("Invalid webhook signature.", 400, "WEBHOOK_ERROR");
   }
-
-  if (event.type === "checkout.session.completed") {
-    const session = event.data.object;
-    const customerId = getStripeId(session.customer);
-
-    if (session.metadata?.userId && customerId) {
-      await User.findByIdAndUpdate(session.metadata.userId, {
-        $set: {
-          stripeCustomerId: customerId
-        }
+  if (!supported.has(event.type)) return res.json({ received: true });
+  if (event.livemode !== config.stripe.secretKey.startsWith("sk_live_"))
+    throw new AppError("Payment mode mismatch.", 400, "PAYMENT_MODE_MISMATCH");
+  if (await BillingEvent.exists({ _id: event.id }))
+    return res.json({ received: true, duplicate: true });
+  const object = event.data.object;
+  const customer = id(object.customer);
+  const user = await User.findOne({ stripeCustomerId: customer });
+  if (!user)
+    throw new AppError(
+      "Customer is not linked yet. Retry delivery.",
+      503,
+      "CUSTOMER_UNLINKED",
+    );
+  await withBillingLock(user._id, async (lockedUser, save) => {
+    if (await BillingEvent.exists({ _id: event.id })) return;
+    if (event.type.startsWith("checkout.session.")) {
+      const checkout = await stripe.checkout.sessions.retrieve(object.id);
+      if (
+        checkout.mode !== "subscription" ||
+        id(checkout.customer) !== customer ||
+        checkout.client_reference_id !== user.id ||
+        checkout.metadata?.userId !== user.id
+      )
+        throw new AppError(
+          "Checkout ownership mismatch.",
+          400,
+          "INVALID_CHECKOUT",
+        );
+    }
+    // Refetch under the customer lock: delivery order cannot restore stale access.
+    const sub = await currentSubscription(stripe, customer);
+    if (
+      sub &&
+      (id(sub.customer) !== customer ||
+        (sub.metadata?.userId && sub.metadata.userId !== user.id))
+    )
+      throw new AppError(
+        "Subscription ownership mismatch.",
+        400,
+        "INVALID_SUBSCRIPTION",
+      );
+    const end =
+      sub?.current_period_end || sub?.items?.data?.[0]?.current_period_end;
+    const session = await User.startSession();
+    try {
+      await session.withTransaction(async () => {
+        await save(
+          {
+            $set: {
+              stripeSubscriptionId: sub?.id || null,
+              subscriptionStatus: sub?.status || "inactive",
+              subscriptionCurrentPeriodEnd: date(end),
+              subscriptionCancelAtPeriodEnd: Boolean(sub?.cancel_at_period_end),
+              subscriptionCancelAt: date(sub?.cancel_at),
+              subscriptionCanceledAt: date(sub?.canceled_at),
+            },
+          },
+          { session },
+        );
+        await BillingEvent.create(
+          [{ _id: event.id, user: user._id, type: event.type }],
+          { session },
+        );
       });
+    } finally {
+      await session.endSession();
     }
-
-    const subscriptionId = getStripeId(session.subscription);
-    if (subscriptionId) {
-      const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-      await syncSubscription(subscription);
-    }
-  }
-
-  if (
-    [
-      "customer.subscription.created",
-      "customer.subscription.updated",
-      "customer.subscription.deleted"
-    ].includes(event.type)
-  ) {
-    await syncSubscription(event.data.object);
-  }
-
-  if (event.type === "invoice.payment_succeeded") {
-    const invoice = event.data.object;
-    const customerId = getStripeId(invoice.customer);
-    const user = await User.findOne({ stripeCustomerId: customerId });
-
-    if (user) {
-      await sendReceiptEmail({
-        user,
-        amountPaid: ((invoice.amount_paid || 0) / 100).toFixed(2),
-        hostedInvoiceUrl: invoice.hosted_invoice_url
-      });
-    }
-  }
-
+  });
   res.json({ received: true });
 });
-
 module.exports = {
   createCheckoutSession,
   createBillingPortalSession,
-  handleStripeWebhook
+  handleStripeWebhook,
+  validSubscription,
 };

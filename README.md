@@ -1,5 +1,7 @@
 # ResumeRoast
 
+> The local implementation now includes queued background processing, HttpOnly sessions, and hardened billing. See [upgrade architecture, deployment steps, and validation limits](docs/async-upgrade.md). The previously deployed demo has not yet been upgraded by this change.
+
 ResumeRoast is a deployed full-stack SaaS-style resume review app. Users create an account, upload a PDF resume, get an ATS-style score, receive a blunt but useful roast, and download a rewritten resume in recruiter-friendly PDF or DOCX format.
 
 The app is built as a realistic portfolio project: real auth, real database persistence, real AI calls, real Stripe subscription infrastructure, and sandbox payments for safe demo testing.
@@ -75,7 +77,12 @@ flowchart LR
   U["User"] --> A["Vercel React client"]
   A --> B["Render Express API"]
   B --> C["MongoDB Atlas"]
-  B --> D["Claude Haiku API"]
+  B --> Q["MongoDB job queue"]
+  B --> S["Private AWS S3 PDFs"]
+  Q --> W["Isolated background workers"]
+  S --> W
+  W --> D["Claude Haiku API"]
+  W --> C
   B --> E["Stripe Checkout + Portal"]
   E --> F["Stripe webhooks"]
   F --> B
@@ -87,8 +94,8 @@ flowchart LR
 1. A user signs up with name, email, password, and a security question.
 2. Passwords and security answers are hashed with bcrypt.
 3. The user uploads a PDF resume.
-4. The API extracts text from the PDF and caps input length.
-5. The backend claims the user's free slot or checks Pro daily usage before calling AI.
+4. The API stores the PDF in private S3 storage and returns a queued job ID (HTTP 202).
+5. The backend reserves quota atomically; a separate worker extracts PDF text and calls AI.
 6. Claude returns structured JSON with score, grade, roast, issues, and rewrite.
 7. The analysis is saved to MongoDB Atlas.
 8. The user can revisit the result from the dashboard and download the rewrite as PDF or DOCX.
@@ -304,4 +311,4 @@ npm run lint         # run lightweight validation
 
 ## Project Status
 
-ResumeRoast is complete as a portfolio-ready full-stack project. The live app uses Stripe Sandbox for demo payments, which keeps testing safe while still proving the real subscription architecture works end to end.
+The asynchronous upgrade is implemented locally and requires the deployment validation described above. The live app uses Stripe Sandbox for demo payments, which keeps testing safe while still proving the real subscription architecture works end to end.

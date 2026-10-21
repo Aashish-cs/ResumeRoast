@@ -17,8 +17,8 @@ app.set("trust proxy", 1);
 
 app.use(
   helmet({
-    crossOriginResourcePolicy: { policy: "cross-origin" }
-  })
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+  }),
 );
 app.use(
   cors({
@@ -30,15 +30,17 @@ app.use(
 
       callback(null, false);
     },
-    credentials: true
-  })
+    credentials: true,
+  }),
 );
 
 app.use(
   "/api/billing/webhook",
   express.raw({ type: "application/json" }),
-  webhookRoutes
+  webhookRoutes,
 );
+
+app.use(require("./middleware/auth").protectOrigin);
 
 app.use(express.json({ limit: "1mb" }));
 app.use(morgan(config.env === "production" ? "combined" : "dev"));
@@ -47,21 +49,43 @@ app.use(
   "/api/",
   rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 120,
+    max: 1000,
     standardHeaders: true,
-    legacyHeaders: false
-  })
+    legacyHeaders: false,
+  }),
 );
 
 app.get("/api/health", (req, res) => {
   res.json({
     ok: true,
     service: "ResumeRoast API",
-    demoAi: config.useDemoAi
+    demoAi: config.useDemoAi,
   });
 });
 
-app.use("/api/auth", authRoutes);
+app.use(
+  "/api/auth",
+  rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 30,
+    skip: (req) => req.method === "GET",
+    standardHeaders: true,
+    legacyHeaders: false,
+  }),
+  authRoutes,
+);
+app.get(
+  "/api/admin/queue",
+  require("./middleware/auth").requireAuth,
+  require("./middleware/auth").requireRole("admin"),
+  require("./utils/asyncHandler")(async (req, res) => {
+    res.json({
+      counts: await require("./models/Analysis").aggregate([
+        { $group: { _id: "$status", count: { $sum: 1 } } },
+      ]),
+    });
+  }),
+);
 app.use("/api/analyses", analysisRoutes);
 app.use("/api/billing", billingRoutes);
 
@@ -70,7 +94,9 @@ app.use(errorHandler);
 
 const startServer = async () => {
   if (!config.mongoUri) {
-    throw new Error("MONGODB_URI is required. Copy .env.example to .env and fill it in.");
+    throw new Error(
+      "MONGODB_URI is required. Copy .env.example to .env and fill it in.",
+    );
   }
 
   await mongoose.connect(config.mongoUri);
@@ -79,7 +105,10 @@ const startServer = async () => {
   });
 };
 
-startServer().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+if (require.main === module)
+  startServer().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+
+module.exports = { app, startServer };
