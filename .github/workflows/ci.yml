@@ -14,8 +14,13 @@ jobs:
       - run: npm ci
       - name: Start isolated replica set
         run: |
+          trap 'docker logs rr-mongo --tail=100; docker inspect rr-mongo --format "{{json .State}}"' ERR
           docker run -d --name rr-mongo -p 27017:27017 mongo:8 --replSet rs0 --bind_ip_all
-          for i in $(seq 1 30); do docker exec rr-mongo mongosh --quiet --eval 'db.adminCommand("ping")' && break || sleep 2; done
+          for i in $(seq 1 30); do
+            if docker exec rr-mongo mongosh --quiet --eval 'db.adminCommand("ping")'; then break; fi
+            if [ "$(docker inspect -f '{{.State.Running}}' rr-mongo)" != true ]; then docker logs rr-mongo; exit 1; fi
+            sleep 2
+          done
           docker exec rr-mongo mongosh --quiet --eval 'rs.initiate({_id:"rs0",members:[{_id:0,host:"localhost:27017"}]})'
       - run: npm run lint
       - run: npm test
@@ -29,6 +34,8 @@ jobs:
           docker compose -p rr-e2e -f compose.test.yaml up --build -d
           for i in $(seq 1 60); do curl -fsS http://localhost:5174/api/health && break || sleep 2; done
           node server/scripts/container-smoke.js
+          docker compose -p rr-e2e -f compose.test.yaml stop worker
+          docker compose -p rr-e2e -f compose.test.yaml exec -T api node server/scripts/admission-load.js
       - name: Container diagnostics
         if: failure()
         run: docker compose -p rr-e2e -f compose.test.yaml logs --tail=100
