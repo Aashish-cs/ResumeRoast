@@ -1,15 +1,6 @@
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5001/api";
-const TOKEN_KEY = "resumeroast_token";
-
-export const getStoredToken = () => localStorage.getItem(TOKEN_KEY);
-
-export const storeToken = (token) => {
-  if (token) localStorage.setItem(TOKEN_KEY, token);
-};
-
-export const clearStoredToken = () => {
-  localStorage.removeItem(TOKEN_KEY);
-};
+const API_URL = import.meta.env.PROD ? "/api" : (import.meta.env.VITE_API_URL || "http://localhost:5001/api");
+// Remove tokens left by older releases. Sessions now live in HttpOnly cookies.
+localStorage.removeItem("resumeroast_token");
 
 const parseResponse = async (response) => {
   const contentType = response.headers.get("content-type") || "";
@@ -22,14 +13,9 @@ const parseResponse = async (response) => {
 };
 
 export const apiRequest = async (path, options = {}) => {
-  const token = options.token ?? getStoredToken();
   const headers = {
-    ...(options.headers || {})
+    ...(options.headers || {}),
   };
-
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
 
   if (options.body && !(options.body instanceof FormData)) {
     headers["Content-Type"] = "application/json";
@@ -37,18 +23,21 @@ export const apiRequest = async (path, options = {}) => {
 
   const response = await fetch(`${API_URL}${path}`, {
     ...options,
+    credentials: "include",
     headers,
     body:
       options.body && !(options.body instanceof FormData)
         ? JSON.stringify(options.body)
-        : options.body
+        : options.body,
   });
 
   const data = await parseResponse(response);
 
   if (!response.ok) {
     const message =
-      typeof data === "object" && data?.message ? data.message : "Request failed.";
+      typeof data === "object" && data?.message
+        ? data.message
+        : "Request failed.";
     const error = new Error(message);
     error.code = data?.code;
     error.details = data;
@@ -59,14 +48,11 @@ export const apiRequest = async (path, options = {}) => {
 };
 
 export const downloadRewrite = async ({ analysisId, format }) => {
-  const token = getStoredToken();
   const response = await fetch(
     `${API_URL}/analyses/${analysisId}/download/${format}`,
     {
-      headers: {
-        Authorization: `Bearer ${token}`
-      }
-    }
+      credentials: "include",
+    },
   );
 
   if (!response.ok) {

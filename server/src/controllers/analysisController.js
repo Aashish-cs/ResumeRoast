@@ -5,8 +5,6 @@ const User = require("../models/User");
 const config = require("../config/env");
 const AppError = require("../utils/AppError");
 const asyncHandler = require("../utils/asyncHandler");
-const { analyzeResumeWithAi } = require("../services/aiService");
-const { extractTextFromPdf, hashResumeText } = require("../services/pdfService");
 const { uploadResumeToS3 } = require("../services/s3Service");
 
 const REWRITE_SECTION_HEADINGS = new Set([
@@ -19,15 +17,19 @@ const REWRITE_SECTION_HEADINGS = new Set([
   "Resume Highlights",
   "Extracted Resume Text",
   "Awards",
-  "Certifications"
+  "Certifications",
 ]);
 
 const serializeAnalysis = (analysis, canViewRewrite) => {
-  const rewriteUnlocked = Boolean(canViewRewrite && analysis.rewriteUnlocked && analysis.rewrite);
+  const rewriteUnlocked = Boolean(
+    canViewRewrite && analysis.rewriteUnlocked && analysis.rewrite,
+  );
 
   return {
     id: analysis._id.toString(),
     originalFileName: analysis.originalFileName,
+    status: analysis.status,
+    error: analysis.error,
     score: analysis.score,
     grade: analysis.grade,
     roast: analysis.roast,
@@ -35,123 +37,71 @@ const serializeAnalysis = (analysis, canViewRewrite) => {
     rewriteUnlocked,
     rewrite: rewriteUnlocked ? analysis.rewrite : undefined,
     model: analysis.model,
-    createdAt: analysis.createdAt
+    createdAt: analysis.createdAt,
   };
 };
 
-const claimFreeAnalysis = async (userId) => {
-  const user = await User.findOneAndUpdate(
-    {
-      _id: userId,
-      $or: [
-        { freeAnalysesUsed: { $exists: false } },
-        { freeAnalysesUsed: { $lt: config.freeAnalysisLimit } }
-      ]
-    },
-    {
-      $inc: { freeAnalysesUsed: 1 },
-      $set: { hasUsedFreeAnalysis: true }
-    },
-    { new: true }
-  );
-
-  if (!user) {
-    throw new AppError(
-      `Your ${config.freeAnalysisLimit} free analyses are already used. Subscribe to unlock daily roasts and rewrites.`,
-      403,
-      "FREE_ANALYSIS_USED"
-    );
-  }
-
-  return user;
-};
-
-const releaseFreeAnalysis = async (userId) => {
-  const user = await User.findById(userId);
-  if (!user) return;
-
-  user.freeAnalysesUsed = Math.max(0, (user.freeAnalysesUsed || 0) - 1);
-  user.hasUsedFreeAnalysis = user.freeAnalysesUsed > 0;
-  await user.save();
-};
-
-const getCurrentDayStart = () => {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
-};
-
-const enforcePaidAnalysisLimit = async (userId) => {
-  const usedToday = await Analysis.countDocuments({
-    user: userId,
-    createdAt: { $gte: getCurrentDayStart() }
-  });
-
-  if (usedToday >= config.proDailyAnalysisLimit) {
-    throw new AppError(
-      `Pro accounts are limited to ${config.proDailyAnalysisLimit} analyses per day in this portfolio build.`,
-      403,
-      "PRO_ANALYSIS_LIMIT"
-    );
-  }
-};
-
 const analyzeResume = asyncHandler(async (req, res) => {
-  if (!req.file) {
-    throw new AppError("Please upload a PDF resume.", 400, "RESUME_REQUIRED");
+  if (!req.file || req.file.buffer.subarray(0, 5).toString() !== "%PDF-") {
+    throw new AppError(
+      "Please upload a valid PDF resume.",
+      400,
+      "RESUME_REQUIRED",
+    );
   }
-
-  const isPaid = req.user.isPaidSubscriber();
-  const includeRewrite = true;
-  let freeSlotClaimed = false;
-
-  if (!isPaid) {
-    req.user = await claimFreeAnalysis(req.user._id);
-    freeSlotClaimed = true;
-  } else {
-    await enforcePaidAnalysisLimit(req.user._id);
-  }
-
+  const key = await uploadResumeToS3({ userId: req.user.id, file: req.file });
+  let analysis;
+  const session = await User.startSession();
   try {
-    const resumeText = await extractTextFromPdf(req.file.buffer);
-    const resumeS3Key = await uploadResumeToS3({
-      userId: req.user._id.toString(),
-      file: req.file
-    });
-
-    const aiResult = await analyzeResumeWithAi({
-      resumeText,
-      includeRewrite
-    });
-
-    const analysis = await Analysis.create({
-      user: req.user._id,
-      originalFileName: req.file.originalname,
-      resumeS3Key,
-      resumeTextHash: hashResumeText(resumeText),
-      score: aiResult.score,
-      grade: aiResult.grade,
-      roast: aiResult.roast,
-      issues: aiResult.issues,
-      rewrite: includeRewrite ? aiResult.rewrite : undefined,
-      rewriteUnlocked: includeRewrite,
-      model: aiResult.model,
-      tokenUsage: {
-        inputTokens: aiResult.usage?.inputTokens || 0,
-        outputTokens: aiResult.usage?.outputTokens || 0
-      }
-    });
-
-    res.status(201).json({
-      analysis: serializeAnalysis(analysis, includeRewrite),
-      user: req.user.toSafeJSON()
+    await session.withTransaction(async () => {
+      // Serialize quota admission across API replicas using a write conflict on the user.
+      const user = await User.findByIdAndUpdate(
+        req.user._id,
+        { $inc: { usageVersion: 1 } },
+        { new: true, session },
+      );
+      const paid = user.isPaidSubscriber();
+      const quotaKey = paid ? new Date().toISOString().slice(0, 10) : "free";
+      const filter = { user: user._id, status: { $ne: "failed" } };
+      if (paid) filter.createdAt = { $gte: new Date(`${quotaKey}T00:00:00Z`) };
+      const used = await Analysis.countDocuments(filter).session(session);
+      const limit = paid
+        ? config.proDailyAnalysisLimit
+        : config.freeAnalysisLimit;
+      if (used >= limit)
+        throw new AppError(
+          "Analysis allowance used. Upgrade or try again tomorrow.",
+          403,
+          paid ? "PRO_ANALYSIS_LIMIT" : "FREE_ANALYSIS_USED",
+        );
+      [analysis] = await Analysis.create(
+        [
+          {
+            user: user._id,
+            originalFileName: req.file.originalname,
+            resumeS3Key: key,
+            status: "queued",
+            quotaKey,
+          },
+        ],
+        { session },
+      );
+      if (!paid)
+        await User.updateOne(
+          { _id: user._id },
+          { $set: { hasUsedFreeAnalysis: true, freeAnalysesUsed: used + 1 } },
+          { session },
+        );
     });
   } catch (error) {
-    if (freeSlotClaimed) {
-      await releaseFreeAnalysis(req.user._id);
-    }
-
+    await require("../services/s3Service")
+      .deleteResume(key)
+      .catch(() => {});
     throw error;
+  } finally {
+    await session.endSession();
   }
+  res.status(202).json({ analysis: serializeAnalysis(analysis, true) });
 });
 
 const listAnalyses = asyncHandler(async (req, res) => {
@@ -160,14 +110,14 @@ const listAnalyses = asyncHandler(async (req, res) => {
     .limit(25);
 
   res.json({
-    analyses: analyses.map((analysis) => serializeAnalysis(analysis, true))
+    analyses: analyses.map((analysis) => serializeAnalysis(analysis, true)),
   });
 });
 
 const getAnalysis = asyncHandler(async (req, res) => {
   const analysis = await Analysis.findOne({
     _id: req.params.id,
-    user: req.user._id
+    user: req.user._id,
   });
 
   if (!analysis) {
@@ -175,14 +125,14 @@ const getAnalysis = asyncHandler(async (req, res) => {
   }
 
   res.json({
-    analysis: serializeAnalysis(analysis, true)
+    analysis: serializeAnalysis(analysis, true),
   });
 });
 
 const requireDownloadableRewrite = async (req) => {
   const analysis = await Analysis.findOne({
     _id: req.params.id,
-    user: req.user._id
+    user: req.user._id,
   });
 
   if (!analysis) {
@@ -193,14 +143,15 @@ const requireDownloadableRewrite = async (req) => {
     throw new AppError(
       "This analysis does not have a rewrite. Re-run it after upgrading.",
       404,
-      "REWRITE_NOT_AVAILABLE"
+      "REWRITE_NOT_AVAILABLE",
     );
   }
 
   return analysis;
 };
 
-const getRewriteLines = (rewrite) => rewrite.split(/\r?\n/).map((line) => line.trim());
+const getRewriteLines = (rewrite) =>
+  rewrite.split(/\r?\n/).map((line) => line.trim());
 
 const getContentIndexes = (lines) =>
   lines
@@ -256,7 +207,11 @@ const renderRewritePdf = (doc, rewrite) => {
         .font("Times-Roman")
         .fontSize(10.5)
         .fillColor("#27272a")
-        .text(`- ${line.slice(2)}`, { indent: 14, hangingIndent: 8, lineGap: 2 });
+        .text(`- ${line.slice(2)}`, {
+          indent: 14,
+          hangingIndent: 8,
+          lineGap: 2,
+        });
       return;
     }
 
@@ -269,13 +224,13 @@ const renderRewritePdf = (doc, rewrite) => {
         .fillColor("#18181b")
         .text(`${labelMatch[1]}:`, { continued: true });
       doc.font("Times-Roman").fillColor("#27272a").text(` ${labelMatch[2]}`, {
-        lineGap: 2
+        lineGap: 2,
       });
       return;
     }
 
     doc.font("Times-Roman").fontSize(10.5).fillColor("#27272a").text(line, {
-      lineGap: 2
+      lineGap: 2,
     });
   });
 };
@@ -294,27 +249,27 @@ const buildRewriteDocxChildren = (rewrite) => {
     if (index === firstContentIndex) {
       return new Paragraph({
         alignment: AlignmentType.CENTER,
-        children: [new TextRun({ text: line, bold: true, size: 32 })]
+        children: [new TextRun({ text: line, bold: true, size: 32 })],
       });
     }
 
     if (index === secondContentIndex) {
       return new Paragraph({
         alignment: AlignmentType.CENTER,
-        children: [new TextRun({ text: line, size: 20 })]
+        children: [new TextRun({ text: line, size: 20 })],
       });
     }
 
     if (REWRITE_SECTION_HEADINGS.has(line)) {
       return new Paragraph({
         spacing: { before: 220, after: 80 },
-        children: [new TextRun({ text: line, bold: true, size: 26 })]
+        children: [new TextRun({ text: line, bold: true, size: 26 })],
       });
     }
 
     return new Paragraph({
       spacing: { after: 60 },
-      children: [new TextRun(line)]
+      children: [new TextRun(line)],
     });
   });
 };
@@ -326,7 +281,7 @@ const downloadRewritePdf = asyncHandler(async (req, res) => {
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader(
     "Content-Disposition",
-    `attachment; filename="resumeroast-rewrite-${analysis._id}.pdf"`
+    `attachment; filename="resumeroast-rewrite-${analysis._id}.pdf"`,
   );
 
   doc.pipe(res);
@@ -341,19 +296,19 @@ const downloadRewriteDocx = asyncHandler(async (req, res) => {
     sections: [
       {
         properties: {},
-        children
-      }
-    ]
+        children,
+      },
+    ],
   });
   const buffer = await Packer.toBuffer(doc);
 
   res.setHeader(
     "Content-Type",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   );
   res.setHeader(
     "Content-Disposition",
-    `attachment; filename="resumeroast-rewrite-${analysis._id}.docx"`
+    `attachment; filename="resumeroast-rewrite-${analysis._id}.docx"`,
   );
   res.send(buffer);
 });
@@ -363,5 +318,5 @@ module.exports = {
   listAnalyses,
   getAnalysis,
   downloadRewritePdf,
-  downloadRewriteDocx
+  downloadRewriteDocx,
 };

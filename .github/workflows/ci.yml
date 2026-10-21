@@ -1,0 +1,45 @@
+name: Validate ResumeRoast
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  test:
+    # MongoDB 8 rejects Linux 6.19+ (SERVER-121912); pin the supported LTS runner.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Start isolated replica set
+        run: |
+          trap 'docker logs rr-mongo --tail=100; docker inspect rr-mongo --format "{{json .State}}"' ERR
+          docker run -d --name rr-mongo -p 27017:27017 mongo:8 --replSet rs0 --bind_ip_all
+          for i in $(seq 1 30); do
+            if docker exec rr-mongo mongosh --quiet --eval 'db.adminCommand("ping")'; then break; fi
+            if [ "$(docker inspect -f '{{.State.Running}}' rr-mongo)" != true ]; then docker logs rr-mongo; exit 1; fi
+            sleep 2
+          done
+          docker exec rr-mongo mongosh --quiet --eval 'rs.initiate({_id:"rs0",members:[{_id:0,host:"localhost:27017"}]})'
+      - run: npm run lint
+      - run: npm test
+        env:
+          TEST_MONGODB_URI: mongodb://127.0.0.1:27017/?replicaSet=rs0
+      - run: npm run build
+      - run: docker build -t resumeroast-api .
+      - run: docker build -f client/Dockerfile -t resumeroast-client .
+      - name: Container end-to-end test
+        run: |
+          docker compose -p rr-e2e -f compose.test.yaml up --build -d
+          for i in $(seq 1 60); do curl -fsS http://localhost:5174/api/health && break || sleep 2; done
+          node server/scripts/container-smoke.js
+          docker compose -p rr-e2e -f compose.test.yaml stop worker
+          docker compose -p rr-e2e -f compose.test.yaml exec -T api node server/scripts/admission-load.js
+      - name: Container diagnostics
+        if: failure()
+        run: docker compose -p rr-e2e -f compose.test.yaml logs --tail=100
+      - name: Stop disposable containers
+        if: always()
+        run: docker compose -p rr-e2e -f compose.test.yaml down -v

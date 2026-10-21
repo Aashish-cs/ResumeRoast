@@ -2,25 +2,32 @@ const mongoose = require("mongoose");
 
 const userSchema = new mongoose.Schema(
   {
+    role: { type: String, enum: ["user", "admin"], default: "user" },
+    sessionVersion: { type: Number, default: 0 },
+    usageVersion: { type: Number, default: 0 },
+    checkoutSessionId: String,
+    checkoutAttempt: String,
+    billingLock: String,
+    billingLockUntil: Date,
     name: {
       type: String,
       trim: true,
-      required: true
+      required: true,
     },
     email: {
       type: String,
       trim: true,
       lowercase: true,
       unique: true,
-      required: true
+      required: true,
     },
     passwordHash: {
       type: String,
-      required: true
+      required: true,
     },
     emailVerified: {
       type: Boolean,
-      default: true
+      default: true,
     },
     emailVerificationTokenHash: String,
     emailVerificationExpires: Date,
@@ -29,25 +36,25 @@ const userSchema = new mongoose.Schema(
     securityQuestion: {
       type: String,
       trim: true,
-      required: true
+      required: true,
     },
     securityAnswerHash: {
       type: String,
-      required: true
+      required: true,
     },
     hasUsedFreeAnalysis: {
       type: Boolean,
-      default: false
+      default: false,
     },
     freeAnalysesUsed: {
       type: Number,
       default: 0,
-      min: 0
+      min: 0,
     },
     stripeCustomerId: {
       type: String,
       index: true,
-      sparse: true
+      sparse: true,
     },
     stripeSubscriptionId: String,
     subscriptionStatus: {
@@ -61,19 +68,19 @@ const userSchema = new mongoose.Schema(
         "unpaid",
         "incomplete",
         "incomplete_expired",
-        "paused"
+        "paused",
       ],
-      default: "inactive"
+      default: "inactive",
     },
     subscriptionCurrentPeriodEnd: Date,
     subscriptionCancelAtPeriodEnd: {
       type: Boolean,
-      default: false
+      default: false,
     },
     subscriptionCancelAt: Date,
-    subscriptionCanceledAt: Date
+    subscriptionCanceledAt: Date,
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 userSchema.methods.isPaidSubscriber = function isPaidSubscriber() {
@@ -93,7 +100,7 @@ userSchema.methods.toSafeJSON = function toSafeJSON() {
     subscriptionCurrentPeriodEnd: this.subscriptionCurrentPeriodEnd,
     subscriptionCancelAtPeriodEnd: this.subscriptionCancelAtPeriodEnd,
     subscriptionCancelAt: this.subscriptionCancelAt,
-    subscriptionCanceledAt: this.subscriptionCanceledAt
+    subscriptionCanceledAt: this.subscriptionCanceledAt,
   };
 };
 

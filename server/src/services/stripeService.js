@@ -6,11 +6,18 @@ let stripe;
 
 const getStripe = () => {
   if (!config.stripe.secretKey) {
-    throw new AppError("Stripe is not configured yet.", 503, "STRIPE_NOT_CONFIGURED");
+    throw new AppError(
+      "Stripe is not configured yet.",
+      503,
+      "STRIPE_NOT_CONFIGURED",
+    );
   }
 
   if (!stripe) {
-    stripe = new Stripe(config.stripe.secretKey);
+    stripe = new Stripe(config.stripe.secretKey, {
+      timeout: 10000,
+      maxNetworkRetries: 1,
+    });
   }
 
   return stripe;
@@ -18,7 +25,11 @@ const getStripe = () => {
 
 const requireStripePrice = () => {
   if (!config.stripe.priceId) {
-    throw new AppError("STRIPE_PRICE_ID is missing.", 503, "STRIPE_PRICE_MISSING");
+    throw new AppError(
+      "STRIPE_PRICE_ID is missing.",
+      503,
+      "STRIPE_PRICE_MISSING",
+    );
   }
 };
 
@@ -27,5 +38,5 @@ const isPaidStatus = (status) => ["active", "trialing"].includes(status);
 module.exports = {
   getStripe,
   requireStripePrice,
-  isPaidStatus
+  isPaidStatus,
 };

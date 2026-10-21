@@ -14,18 +14,33 @@ const ResultsPage = () => {
   const [downloading, setDownloading] = useState("");
 
   useEffect(() => {
+    let cancelled = false;
+    let timer;
+    setLoading(true);
+    setAnalysis(null);
+    setError("");
     const loadAnalysis = async () => {
       try {
         const data = await apiRequest(`/analyses/${id}`);
+        if (cancelled) return;
         setAnalysis(data.analysis);
+        setError("");
+        if (["queued", "processing"].includes(data.analysis.status))
+          timer = setTimeout(loadAnalysis, 5000);
       } catch (requestError) {
-        setError(requestError.message);
+        if (!cancelled) {
+          setError(requestError.message);
+          timer = setTimeout(loadAnalysis, 15000);
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
-
     loadAnalysis();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [id]);
 
   const handleDownload = async (format) => {
@@ -60,6 +75,26 @@ const ResultsPage = () => {
     );
   }
 
+  if (analysis && ["queued", "processing", "failed"].includes(analysis.status))
+    return (
+      <section className="mx-auto max-w-3xl px-4 py-12">
+        <h1 className="text-3xl font-bold">
+          {analysis.status === "failed"
+            ? "Analysis failed"
+            : "Your resume is being analyzed"}
+        </h1>
+        <p className="mt-4">
+          {analysis.status === "failed"
+            ? analysis.error
+            : "You can leave this page and return from your dashboard. Results appear automatically."}
+        </p>
+        {error && <p role="alert">{error}</p>}
+        <Link to="/upload" className="button-secondary mt-6">
+          Upload another resume
+        </Link>
+      </section>
+    );
+
   return (
     <section className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
       <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -89,7 +124,10 @@ const ResultsPage = () => {
             </div>
             <ul className="space-y-3">
               {analysis.issues.map((issue) => (
-                <li key={issue} className="rounded-md bg-zinc-50 p-3 text-sm text-zinc-700">
+                <li
+                  key={issue}
+                  className="rounded-md bg-zinc-50 p-3 text-sm text-zinc-700"
+                >
                   {issue}
                 </li>
               ))}
